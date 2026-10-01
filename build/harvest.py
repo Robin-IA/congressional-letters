@@ -101,6 +101,30 @@ DIGEST_PREFIX = re.compile(r"/[0-9a-f]{32}\.(?=.)", re.IGNORECASE)
 # Variant renderings of the same page.
 SUFFIX_NOISE = re.compile(r"/(embed|amp|print)/?$", re.IGNORECASE)
 
+# A paginated list view, not a document.
+PAGINATION = re.compile(r"[?&]page=\d+", re.IGNORECASE)
+
+# How far from the end of the path the word "letter" may sit.
+#
+# This is the single most important filter here. Many member sites have a
+# SECTION called letters — /media/letters/, /media-center/op-eds-and-letters/ —
+# and Wayback has crawled an endless JavaScript-library path space beneath it:
+#
+#   morelle.house.gov/media/letters-0/esri/renderers/dijit/tooltipdialog?page=5
+#   tiffany.house.gov/media/letters/esri/profiles/dojo/dom-class
+#
+# Every one of those matches a urlkey filter for "letter" while being nothing
+# of the kind. Unfiltered they made John Larson the most prolific
+# correspondent in Congress with 43,357 letters, against Elizabeth Warren's
+# 6,053 — and Warren is genuinely the Senate's most prolific letter-writer.
+#
+# A letter is identified by its own name, or by the folder it sits directly in:
+# Durbin files his as /appropriations/letters/FY11_DefenseApprops.pdf, where
+# the word is one level up. Two levels up it is a section, not a document.
+# Measured on Morelle: 44 letters at depth 0 and 137 at depth 1, against
+# 19,499 deeper.
+MAX_LETTER_DEPTH = 1
+
 # Legacy content-management URLs: the same page addressed through template
 # machinery, with GUIDs that differ per request. schiff.house.gov's old site
 # emits thousands of these and no two are the same page twice.
@@ -177,9 +201,29 @@ def canonical(url: str) -> str:
     return cleaned.rstrip("/").lower()
 
 
+def letter_depth(url: str) -> int | None:
+    """How many path segments sit after the one naming the letter.
+
+    ``None`` when no segment contains the word at all, which can happen when
+    it is only in the query string.
+    """
+    path = url.split("?", 1)[0]
+    path = re.sub(r"^https?://[^/]*", "", path)
+    segments = [s for s in path.split("/") if s]
+    matches = [i for i, s in enumerate(segments) if "letter" in s.lower()]
+    if not matches:
+        return None
+    return len(segments) - 1 - matches[-1]
+
+
 def keep(row: dict) -> bool:
     url = row["url"]
     if NOT_A_DOCUMENT.search(url) or TEMPLATE_URL.search(url):
+        return False
+    if PAGINATION.search(url):
+        return False
+    depth = letter_depth(url)
+    if depth is None or depth > MAX_LETTER_DEPTH:
         return False
     mimetype = (row.get("mimetype") or "").lower()
     return mimetype.startswith("application/pdf") or mimetype.startswith("text/html")

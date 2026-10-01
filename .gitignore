@@ -1,5 +1,6 @@
 data/cdx-cache/
 data/letters-raw.jsonl
+data/letters-parsed.jsonl
 data/pdfs/
-data/thumbs/
+site/thumbs/
 __pycache__/

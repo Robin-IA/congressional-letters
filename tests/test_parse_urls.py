@@ -14,7 +14,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "build"))
 
-from harvest import canonical, keep  # noqa: E402
+from harvest import canonical, keep, letter_depth  # noqa: E402
 from parse_urls import (  # noqa: E402
     canonical_recipient,
     find_date,
@@ -52,6 +52,31 @@ class Keep(unittest.TestCase):
     def test_keeps_a_real_letter(self):
         self.assertTrue(keep(letter(
             "cantwell.senate.gov/imo/media/doc/2022 crab disaster letter.pdf")))
+
+    def test_rejects_a_crawler_trap_under_a_letters_section(self):
+        # Many sites have a SECTION called letters, and Wayback has crawled an
+        # endless JavaScript-library path space beneath it. Unfiltered, these
+        # made John Larson the most prolific correspondent in Congress with
+        # 43,357 letters against Elizabeth Warren's 6,053.
+        for url in (
+            "larson.house.gov/media-center/op-eds-and-letters/esri/renderers/"
+            "esri/esri/symbols/simplefillsymbol?page=3",
+            "morelle.house.gov/media/letters-0/esri/renderers/dijit/tooltipdialog",
+            "tiffany.house.gov/media/letters/esri/profiles/dojo/dom-class",
+        ):
+            self.assertFalse(keep(letter(url, mimetype="text/html")), url)
+
+    def test_keeps_a_letter_one_level_under_a_letters_folder(self):
+        # Durbin files his as /appropriations/letters/FY11_DefenseApprops.pdf,
+        # where the word is one segment up rather than in the filename.
+        self.assertTrue(keep(letter(
+            "durbin.senate.gov/appropriations/letters/FY11_DefenseApprops.pdf")))
+        self.assertEqual(letter_depth(
+            "durbin.senate.gov/appropriations/letters/FY11_Defense.pdf"), 1)
+
+    def test_rejects_a_paginated_list_view(self):
+        self.assertFalse(keep(letter(
+            "x.house.gov/media/letters?page=4", mimetype="text/html")))
 
 
 class Canonical(unittest.TestCase):
@@ -127,6 +152,13 @@ class Dates(unittest.TestCase):
 
     def test_rejects_an_impossible_date(self):
         self.assertIsNone(find_date("x", "letter 13 45 2020")[0])
+
+    def test_rejects_a_future_date(self):
+        # "provider relief fund letter to hhs 5 29 29" reads as 2029, and a
+        # handful of these reported the whole corpus as running to 2029.
+        self.assertIsNone(
+            find_date("x", "provider relief fund letter to hhs 5 29 29")[0])
+        self.assertIsNone(find_date("x", "letter 12 06 29")[0])
 
 
 class Recipients(unittest.TestCase):

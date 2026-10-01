@@ -1,0 +1,178 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>What Congress Asked · Internet Archive</title>
+<meta name="description" content="Oversight letters published on members of Congress's own websites and preserved in the Wayback Machine. Who each member wrote to, what they demanded, and when.">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect x='5' y='3' width='22' height='26' rx='1.5' fill='none' stroke='%232c2c2c' stroke-width='2.4'/%3E%3Cpath d='M10 10h12M10 15h12M10 20h7' stroke='%232c2c2c' stroke-width='2.2' stroke-linecap='round'/%3E%3C/svg%3E">
+<style>
+:root {
+  --page: #fbfbfd; --panel: #fff; --ink: #2b2b2b; --muted: #6e6e73; --faint: #96969b;
+  --bar: #2c2c2c; --link: #2f6bbd; --active: #4b64ff; --hair: #e4e4e8; --tint: #f4f4f7;
+  --sen: #2f6f9f; --hou: #7a4f9c; --dem: #2a6ebb; --rep: #c0392b; --ind: #6b7280;
+  --lead: #b4531f; --join: #3e7d57;
+  --font: "Helvetica Neue", Helvetica, Arial, sans-serif;
+  --serif: Georgia, "Times New Roman", serif;
+}
+html { font-size: 10px; -webkit-text-size-adjust: 100%; }
+*, *::before, *::after { box-sizing: border-box; }
+body { margin: 0; background: var(--page); color: var(--ink); font: 1.4rem/1.5 var(--font); }
+a { color: var(--link); text-decoration: none; }
+a:hover { text-decoration: underline; }
+button { font: inherit; color: inherit; background: none; border: 0; padding: 0; margin: 0; cursor: pointer; text-align: left; }
+input, select { font: inherit; color: inherit; }
+h1, h2, h3 { margin: 0; font-weight: inherit; font-size: inherit; }
+ul, ol { list-style: none; margin: 0; padding: 0; }
+p { margin: 0; }
+table { border-collapse: collapse; width: 100%; }
+th { font-weight: inherit; text-align: left; }
+img { display: block; max-width: 100%; }
+mark { background: #fff2ae; color: inherit; }
+[hidden] { display: none !important; }
+
+.wrap { max-width: 126rem; margin: 0 auto; padding: 0 2.4rem; }
+.page { min-height: 100vh; display: flex; flex-direction: column; }
+header.bar { background: var(--bar); color: #fff; }
+header.bar .wrap { min-height: 5.6rem; display: flex; align-items: center; gap: 1.4rem; flex-wrap: wrap; padding-top: .7rem; padding-bottom: .7rem; }
+header.bar a.brand { display: flex; align-items: center; gap: 1rem; color: #fff; font-size: 1.6rem; font-weight: 500; letter-spacing: -.01em; }
+header.bar a.brand:hover { text-decoration: none; }
+header.bar .tag { font-size: 1.3rem; opacity: .75; }
+header.bar form { margin-left: auto; display: flex; }
+header.bar input { width: 20rem; height: 3.4rem; padding: 0 1.2rem; background: #fff; color: var(--ink); border: 1px solid #fff; border-radius: 3px 0 0 3px; }
+header.bar form button { height: 3.4rem; padding: 0 1.5rem; background: var(--active); color: #fff; border-radius: 0 3px 3px 0; }
+@media (min-width: 900px) { header.bar input { width: 27rem; } }
+@media (max-width: 700px) { header.bar .tag { display: none; } header.bar form { margin-left: 0; width: 100%; } header.bar input { flex: 1; width: auto; } }
+
+nav.views { background: var(--panel); border-bottom: 1px solid var(--hair); position: sticky; top: 0; z-index: 30; }
+nav.views .wrap { display: flex; gap: .3rem; overflow-x: auto; }
+nav.views button { padding: 1.2rem 1.5rem; border-bottom: 2px solid transparent; margin-bottom: -1px; white-space: nowrap; color: var(--muted); }
+nav.views button:hover { color: var(--ink); }
+nav.views button[aria-current="page"] { border-color: var(--active); color: var(--active); }
+main { flex: 1; width: 100%; padding: 2.4rem; max-width: 126rem; margin: 0 auto; }
+footer { border-top: 1px solid var(--hair); color: var(--muted); font-size: 1.2rem; padding: 1.8rem 2.4rem; }
+footer .wrap { padding: 0; }
+
+.muted { color: var(--muted); }
+.faint { color: var(--faint); }
+.small { font-size: 1.2rem; }
+.tab { font-variant-numeric: tabular-nums; }
+.hero { font-family: var(--serif); font-size: 2.1rem; line-height: 1.4; max-width: 60rem; margin-bottom: .8rem; letter-spacing: -.01em; }
+.sub { font-size: 1.45rem; color: var(--muted); max-width: 68rem; margin-bottom: 2rem; }
+.sub b { color: var(--ink); font-variant-numeric: tabular-nums; }
+
+.controls { display: flex; flex-wrap: wrap; gap: .7rem; align-items: center; margin-bottom: 1.6rem; }
+.controls input[type=search] { flex: 1 1 20rem; min-width: 16rem; height: 3.4rem; padding: 0 1.1rem; border: 1px solid var(--hair); border-radius: 3px; background: #fff; }
+.controls select { height: 3.4rem; padding: 0 .7rem; border: 1px solid var(--hair); border-radius: 3px; background: #fff; }
+.count { margin-left: auto; color: var(--muted); font-size: 1.25rem; }
+
+.grid { display: grid; gap: 1rem; grid-template-columns: repeat(auto-fill, minmax(28rem, 1fr)); }
+.card { background: var(--panel); border: 1px solid var(--hair); border-radius: 5px; padding: 1.2rem 1.4rem; display: flex; flex-direction: column; gap: .55rem; width: 100%; }
+.card:hover { border-color: #c6c6cc; box-shadow: 0 1px 5px rgba(0,0,0,.06); }
+.card .top { display: flex; align-items: baseline; gap: .7rem; }
+.card .nm { font-size: 1.5rem; font-weight: 500; color: var(--link); }
+.card:hover .nm { text-decoration: underline; }
+.card .ct { margin-left: auto; font-variant-numeric: tabular-nums; font-weight: 600; font-size: 1.5rem; }
+.card .meta { font-size: 1.15rem; color: var(--muted); display: flex; gap: .45rem; flex-wrap: wrap; align-items: center; }
+.card .with { font-size: 1.2rem; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+.badge { display: inline-block; padding: .05rem .5rem; border-radius: 2px; font-size: 1.1rem; line-height: 1.55; color: #fff; }
+.b-sen { background: var(--sen); } .b-hou { background: var(--hou); }
+.b-dem { background: var(--dem); } .b-rep { background: var(--rep); } .b-ind { background: var(--ind); }
+.chip { display: inline-block; padding: .05rem .5rem; border: 1px solid var(--hair); border-radius: 2px; font-size: 1.1rem; color: var(--muted); background: var(--tint); }
+.role { font-size: 1.1rem; padding: .05rem .45rem; border-radius: 2px; }
+.r-leads { background: #fbeadf; color: var(--lead); }
+.r-joins { background: #e4f1ea; color: var(--join); }
+
+.spark { display: block; width: 100%; height: 2.2rem; }
+.spark rect { fill: var(--active); opacity: .5; }
+
+.panel { background: var(--panel); border: 1px solid var(--hair); border-radius: 5px; padding: 1.6rem 1.8rem; margin-bottom: 1.6rem; }
+.panel > h3 { font-size: 1.15rem; color: var(--muted); text-transform: uppercase; letter-spacing: .05em; margin-bottom: 1rem; }
+.dhead { display: flex; flex-wrap: wrap; gap: .8rem 1.6rem; align-items: baseline; }
+.dhead h2 { font-size: 2.5rem; font-weight: 500; letter-spacing: -.015em; }
+.stats { display: flex; flex-wrap: wrap; gap: 2.2rem; margin-top: 1.3rem; }
+.stats div { display: flex; flex-direction: column; }
+.stats .v { font-size: 2rem; font-variant-numeric: tabular-nums; }
+.stats .k { font-size: 1.1rem; color: var(--muted); text-transform: uppercase; letter-spacing: .04em; }
+
+.cols { display: grid; gap: 1.6rem; grid-template-columns: 1fr; }
+@media (min-width: 1020px) { .cols { grid-template-columns: 1fr 30rem; align-items: start; } }
+
+/* The thumbnail wall: the letters themselves, which is the whole point. */
+.wall { display: grid; gap: 1.1rem; grid-template-columns: repeat(auto-fill, minmax(15rem, 1fr)); }
+.shot { display: flex; flex-direction: column; gap: .5rem; background: var(--panel); border: 1px solid var(--hair); border-radius: 4px; padding: .7rem; }
+.shot:hover { border-color: var(--link); box-shadow: 0 2px 8px rgba(0,0,0,.09); }
+.shot .frame { aspect-ratio: 17/22; background: var(--tint); border: 1px solid var(--hair); overflow: hidden; display: flex; align-items: center; justify-content: center; }
+.shot .frame img { width: 100%; height: 100%; object-fit: cover; object-position: top center; }
+.shot .frame .none { font-size: 1.1rem; color: var(--faint); text-align: center; padding: 1rem; line-height: 1.4; }
+.shot .cap { font-size: 1.15rem; line-height: 1.35; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
+.shot .when { font-size: 1.1rem; color: var(--faint); font-variant-numeric: tabular-nums; }
+
+table.letters th, table.letters td { padding: .7rem .85rem; border-bottom: 1px solid var(--hair); vertical-align: top; }
+table.letters th { font-size: 1.1rem; color: var(--muted); text-transform: uppercase; letter-spacing: .04em; background: var(--tint); position: sticky; top: 4.6rem; z-index: 5; }
+table.letters tr:hover td { background: #fafbff; }
+table.letters .wh { width: 8.5rem; font-variant-numeric: tabular-nums; color: var(--muted); white-space: nowrap; }
+table.letters .who { width: 15rem; }
+table.letters .sub2 { min-width: 20rem; }
+table.letters td:last-child { width: 6rem; white-space: nowrap; }
+
+.bars { display: flex; align-items: flex-end; gap: 1px; height: 11rem; margin: 1rem 0 .3rem; }
+.bars button { flex: 1; background: var(--active); opacity: .45; min-height: 1px; border-radius: 1px 1px 0 0; }
+.bars button:hover, .bars button[aria-current="true"] { opacity: 1; }
+.axis { position: relative; height: 1.6rem; font-size: 1.1rem; color: var(--muted); font-variant-numeric: tabular-nums; }
+
+.rank li { display: flex; align-items: center; gap: .7rem; padding: .45rem .1rem; border-bottom: 1px solid var(--hair); }
+.rank li:last-child { border-bottom: 0; }
+.rank .nm { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.rank .n { font-variant-numeric: tabular-nums; color: var(--muted); font-size: 1.25rem; }
+.rank .track { width: 5.5rem; height: .55rem; background: var(--tint); border-radius: 3px; overflow: hidden; }
+.rank .track i { display: block; height: 100%; background: var(--active); opacity: .5; }
+
+.back { display: inline-block; margin-bottom: 1.1rem; font-size: 1.3rem; }
+.empty { padding: 4rem 2rem; text-align: center; color: var(--muted); }
+.more { display: block; width: 100%; padding: 1.1rem; margin-top: 1.2rem; text-align: center; border: 1px solid var(--hair); border-radius: 4px; background: var(--panel); color: var(--link); }
+.more:hover { border-color: var(--link); }
+.toggle { display: inline-flex; border: 1px solid var(--hair); border-radius: 4px; overflow: hidden; }
+.toggle button { padding: .5rem 1.1rem; font-size: 1.25rem; background: var(--panel); color: var(--muted); }
+.toggle button[aria-pressed="true"] { background: var(--active); color: #fff; }
+.note { font-size: 1.2rem; color: var(--muted); background: var(--tint); border-left: 3px solid var(--hair); padding: .8rem 1.1rem; border-radius: 0 3px 3px 0; margin-bottom: 1.4rem; }
+
+.prose { max-width: 70rem; }
+.prose h3 { font-size: 1.65rem; font-weight: 600; margin: 2.2rem 0 .7rem; }
+.prose p { margin-bottom: 1.1rem; line-height: 1.65; }
+.prose table { margin: 1rem 0 1.5rem; font-size: 1.3rem; }
+.prose td, .prose th { padding: .5rem .8rem; border-bottom: 1px solid var(--hair); }
+.prose td.n { text-align: right; font-variant-numeric: tabular-nums; }
+.prose code { background: var(--tint); padding: .1rem .4rem; border-radius: 2px; font-size: 1.25rem; }
+#boot { padding: 6rem 2.4rem; text-align: center; color: var(--muted); }
+</style>
+</head>
+<body>
+<div class="page">
+  <header class="bar">
+    <div class="wrap">
+      <a class="brand" href="https://archive.org/" title="Internet Archive">
+        <svg width="28" height="28" viewBox="0 0 30 30" aria-hidden="true"><rect x="2" y="26" width="26" height="2.5" fill="#fff"/><rect x="2" y="4.5" width="26" height="2.5" fill="#fff"/><path d="M15 1 3 4.5h24z" fill="#fff"/><rect x="5" y="8.5" width="2.75" height="16" fill="#fff"/><rect x="10.75" y="8.5" width="2.75" height="16" fill="#fff"/><rect x="16.5" y="8.5" width="2.75" height="16" fill="#fff"/><rect x="22.25" y="8.5" width="2.75" height="16" fill="#fff"/></svg>
+        <span>What Congress Asked</span>
+      </a>
+      <span class="tag">Letters from members' own websites, kept by the Wayback Machine</span>
+      <form id="topsearch" role="search">
+        <input id="q" type="search" placeholder="Search letters" aria-label="Search letters" autocomplete="off">
+        <button type="submit">Search</button>
+      </form>
+    </div>
+  </header>
+  <nav class="views" aria-label="Views"><div class="wrap" id="tabs"></div></nav>
+  <main id="main"><div id="boot">Loading the letters…</div></main>
+  <footer><div class="wrap">
+    Every letter here was published on a member of Congress's own website and preserved by the
+    Wayback Machine. Member sites are replaced wholesale when a seat changes hands, so for many
+    of these the archive is the only copy left.
+    <a href="?view=about" data-view="about">How this was built, and what it misses</a>.
+  </div></footer>
+</div>
+<noscript><p style="padding:2rem">This explorer needs JavaScript.</p></noscript>
+<script type="module" src="app.js"></script>
+</body>
+</html>

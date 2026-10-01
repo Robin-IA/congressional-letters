@@ -1,0 +1,175 @@
+#!/usr/bin/env python3
+"""Render the first page of each letter to a thumbnail.
+
+Why this and not OCR
+--------------------
+Only about a quarter of these PDFs carry a text layer; the rest are scans of
+the signed original. For a searchable database that is a problem to be solved
+with OCR. For an explorer it is an asset: the scan IS the letter, and a
+first-page thumbnail at 24 KB shows the letterhead, the date, the salutation
+and the opening argument. You can read it. A visitor learns more from that
+than from any summary a parser could write.
+
+The North Korea explorer leans on screenshots the same way, and this corpus
+has something better than screenshots — the documents themselves.
+
+Storage
+-------
+Thumbnails are named by the capture's content digest, so a letter captured
+twenty times is rendered once, and two members publishing the same joint letter
+share one file. Roughly 56,000 PDFs at ~24 KB is about 1.3 GB, which does not
+belong in a git repository: the explorer reads ``thumb_base`` from index.json,
+so the files can be served from an archive.org item the way the North Korea
+explorer serves its screenshot zips.
+
+Politeness
+----------
+This fetches tens of thousands of files from web.archive.org. Concurrency is
+deliberately low, failures are recorded and skipped rather than retried
+forever, and the whole thing is resumable — a thumbnail that exists is never
+fetched again. It is also optional: the explorer works without any of them and
+improves as they land.
+"""
+
+from __future__ import annotations
+
+import argparse
+import concurrent.futures as cf
+import io
+import json
+import sys
+import threading
+import time
+import urllib.error
+import urllib.request
+from collections import Counter, defaultdict
+from pathlib import Path
+
+UA = {"User-Agent": "ia-congressional-member-letters/0.1 "
+                    "(Internet Archive; collections research)"}
+TIMEOUT = 120
+MAX_BYTES = 40 * 1024 * 1024      # a letter is not 40 MB; something else is
+WIDTH = 340                        # rendered thumbnail width in pixels
+
+_print_lock = threading.Lock()
+
+
+def wayback_url(record: dict) -> str:
+    return (f"https://web.archive.org/web/{record['timestamp']}id_/"
+            f"{record['url']}")
+
+
+def render(blob: bytes, out_path: Path) -> None:
+    import pypdfium2 as pdfium
+    document = pdfium.PdfDocument(io.BytesIO(blob))
+    try:
+        if not len(document):
+            raise ValueError("no pages")
+        page = document[0]
+        # Scale from the page's own width so a legal-size letter and a letter-
+        # size one come out the same number of pixels across.
+        scale = WIDTH / max(1.0, page.get_width())
+        image = page.render(scale=min(scale, 3.0)).to_pil()
+        image.convert("RGB").save(out_path, "JPEG", quality=72, optimize=True)
+    finally:
+        document.close()
+
+
+def one(record: dict, thumbs: Path) -> str:
+    digest = record.get("digest") or ""
+    if not digest:
+        return "no-digest"
+    out_path = thumbs / f"{digest}.jpg"
+    if out_path.exists():
+        return "cached"
+
+    try:
+        request = urllib.request.Request(wayback_url(record), headers=UA)
+        with urllib.request.urlopen(request, timeout=TIMEOUT) as response:
+            blob = response.read(MAX_BYTES + 1)
+        if len(blob) > MAX_BYTES:
+            return "too-big"
+        if not blob.startswith(b"%PDF"):
+            return "not-pdf"
+        staged = out_path.with_suffix(".part")
+        render(blob, staged)
+        staged.replace(out_path)
+        return "rendered"
+    except urllib.error.HTTPError as exc:
+        return f"http-{exc.code}"
+    except Exception as exc:  # noqa: BLE001
+        return type(exc).__name__
+
+
+def main() -> None:
+    root = Path(__file__).resolve().parents[1]
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--parsed", type=Path,
+                        default=root / "data" / "letters-parsed.jsonl")
+    parser.add_argument("--thumbs", type=Path, default=root / "site" / "thumbs")
+    parser.add_argument("--workers", type=int, default=4)
+    parser.add_argument("--max", type=int, default=0,
+                        help="stop after this many renders (0 = no limit)")
+    parser.add_argument("--per-member", type=int, default=0,
+                        help="cap per member, so breadth comes before depth")
+    args = parser.parse_args()
+
+    args.thumbs.mkdir(parents=True, exist_ok=True)
+
+    # PDFs only: a press-release page has no first page to render.
+    jobs: list[dict] = []
+    per_member: Counter = Counter()
+    seen_digests: set[str] = set()
+    with args.parsed.open(encoding="utf-8") as handle:
+        for line in handle:
+            record = json.loads(line)
+            if not record["mimetype"].startswith("application/pdf"):
+                continue
+            digest = record.get("digest") or ""
+            if not digest or digest in seen_digests:
+                continue
+            if args.per_member:
+                if per_member[record["bioguide"]] >= args.per_member:
+                    continue
+                per_member[record["bioguide"]] += 1
+            seen_digests.add(digest)
+            jobs.append(record)
+
+    pending = [j for j in jobs
+               if not (args.thumbs / f"{j['digest']}.jpg").exists()]
+    print(f"{len(jobs):,} distinct PDFs, {len(pending):,} still to render",
+          file=sys.stderr)
+    if args.max:
+        pending = pending[: args.max]
+        print(f"  limited to {len(pending):,} this run", file=sys.stderr)
+
+    outcomes: Counter = Counter()
+    started = time.time()
+    done = 0
+    with cf.ThreadPoolExecutor(max_workers=args.workers) as pool:
+        futures = {pool.submit(one, j, args.thumbs): j for j in pending}
+        for future in cf.as_completed(futures):
+            try:
+                outcome = future.result()
+            except Exception as exc:  # noqa: BLE001
+                outcome = type(exc).__name__
+            outcomes[outcome] += 1
+            done += 1
+            if done % 100 == 0:
+                rate = done / max(0.001, (time.time() - started) / 60)
+                with _print_lock:
+                    print(f"  {done:,}/{len(pending):,}  "
+                          f"{outcomes['rendered']:,} rendered  "
+                          f"{rate:.0f}/min", file=sys.stderr, flush=True)
+
+    print(file=sys.stderr)
+    for outcome, count in outcomes.most_common():
+        print(f"  {outcome:>16}: {count:,}", file=sys.stderr)
+    total = len(list(args.thumbs.glob("*.jpg")))
+    size = sum(p.stat().st_size for p in args.thumbs.glob("*.jpg"))
+    print(f"\n{total:,} thumbnails, {size / 1024 / 1024:.0f} MB",
+          file=sys.stderr)
+
+
+if __name__ == "__main__":
+    main()

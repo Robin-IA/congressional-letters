@@ -268,7 +268,14 @@ def find_date(key: str, slug: str) -> tuple[str | None, str | None]:
                 year = 2000 + int(c)
             if not (1 <= month <= 12 and 1 <= day <= 31):
                 continue
-            return date_type(year, month, day).isoformat(), "slug"
+            parsed = date_type(year, month, day)
+            # A letter cannot be dated after today. Eleven slugs in 29,316
+            # parsed to 2027-2029 — "...letter to hhs 5 29 29" reads as a
+            # two-digit year that is not one — and those few were enough to
+            # report the whole corpus as running to 2029.
+            if parsed > date_type.today():
+                continue
+            return parsed.isoformat(), "slug"
         except ValueError:
             continue
 
