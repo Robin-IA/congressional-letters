@@ -104,6 +104,11 @@ SUFFIX_NOISE = re.compile(r"/(embed|amp|print)/?$", re.IGNORECASE)
 # A paginated list view, not a document.
 PAGINATION = re.compile(r"[?&]page=\d+", re.IGNORECASE)
 
+# The section's own index page: /media-center/letters, /posts/letters,
+# /media/letters-0. The depth rule cannot catch these, because the word IS the
+# last segment — it is just the name of a listing rather than of a letter.
+SECTION_INDEX = re.compile(r"/letters?(?:-\d+)?/?$", re.IGNORECASE)
+
 # How far from the end of the path the word "letter" may sit.
 #
 # This is the single most important filter here. Many member sites have a
@@ -221,6 +226,8 @@ def keep(row: dict) -> bool:
     if NOT_A_DOCUMENT.search(url) or TEMPLATE_URL.search(url):
         return False
     if PAGINATION.search(url):
+        return False
+    if SECTION_INDEX.search(url.split("?", 1)[0]):
         return False
     depth = letter_depth(url)
     if depth is None or depth > MAX_LETTER_DEPTH:

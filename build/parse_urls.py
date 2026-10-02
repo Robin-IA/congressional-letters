@@ -46,7 +46,18 @@ PATH_NOISE = re.compile(
     r"|cache|index\.cfm|content|assets|about|issues|upload|audio"
     r"|newsroom-news-releases|news-releases|reference|reference_item"
     r"|bookjackets|common|image|images|item|stories|pdf|attachments"
-    r"|sites-default-files|general|shared|resources|static)$", re.IGNORECASE)
+    r"|sites-default-files|general|shared|resources|static"
+    r"|uploadedfiles|media-center|mediacenter|posts|press-release"
+    r"|evo|subsites|evo-subsites|sites-default|inline-files|node|view|print"
+    r"|wysiwyg|wysiwyg-uploaded|uploaded|vendor|themes|modules)$",
+    re.IGNORECASE)
+
+# Drupal stores a site's uploads under its own hostname:
+# buchanan.house.gov/sites/buchanan.house.gov/files/letter to ssa.pdf
+# Left in, the host becomes the first words of the description, which is why
+# 194 letters were described as "house gov".
+HOSTNAME_SEGMENT = re.compile(
+    r"^[a-z0-9-]+(\.[a-z0-9-]+)*\.(gov|com|org|net|us)$", re.IGNORECASE)
 
 # Site builders prefix internal folders with an underscore — /public/_files/,
 # /_cache/ — and without stripping it the folder name survives into the
@@ -97,6 +108,18 @@ ROLE_VERBS = {
 QUALIFIERS = {"bipartisan", "bicameral", "delegation", "colleagues",
               "democrats", "republicans", "members"}
 
+# Titles that belong to a correspondent rather than to the letter. Stripped
+# from a recipient, and from a subject, where they otherwise stand in as the
+# whole description: 149 letters were described as "secretary", because
+# "letter to secretary cardona" resolved Cardona and left his title behind.
+HONORIFICS = {
+    "THE", "HON", "HONORABLE", "MR", "MRS", "MS", "MISS", "DR", "PROF",
+    "SECRETARY", "SEC", "ADMINISTRATOR", "DIRECTOR", "CHAIRMAN", "CHAIRWOMAN",
+    "CHAIR", "ACTING", "DEPUTY", "ASSISTANT", "COMMISSIONER", "GOVERNOR",
+    "GOV", "AMBASSADOR", "SENATOR", "SEN", "CONGRESSMAN", "CONGRESSWOMAN",
+    "REPRESENTATIVE", "REP", "PRESIDENT", "JUDGE", "GENERAL", "ADMIRAL",
+}
+
 # The recipient, however the slug phrases it.
 RECIPIENT_PATTERNS = [
     re.compile(r"\bletters?\s+to\s+(?P<who>.+?)"
@@ -119,7 +142,8 @@ RECIPIENTS: dict[str, tuple[str, ...]] = {
                               "ag", "the attorney general"),
     "Environmental Protection Agency": ("epa", "the epa", "us epa"),
     "Department of Defense": ("dod", "defense dept", "defense department",
-                              "department of defense", "pentagon"),
+                              "department of defense", "pentagon",
+                              "secdef", "secretary of defense"),
     "Department of Health and Human Services": (
         "hhs", "health and human services", "department of health and human services"),
     "Securities and Exchange Commission": ("sec", "the sec"),
@@ -128,8 +152,15 @@ RECIPIENTS: dict[str, tuple[str, ...]] = {
     "Department of Homeland Security": ("dhs", "homeland security"),
     "Department of Agriculture": ("usda", "agriculture dept",
                                   "department of agriculture"),
-    "Department of Veterans Affairs": ("va", "the va", "veterans affairs"),
-    "Department of State": ("state dept", "department of state", "secretary of state"),
+    "Department of Veterans Affairs": ("va", "the va", "veterans affairs",
+                                      "secva", "secretary of veterans affairs"),
+    "Department of State": ("state dept", "department of state",
+                            "secretary of state", "state", "state department",
+                            "the state department"),
+    "Department of Housing and Urban Development": (
+        "hud", "the hud", "housing and urban development"),
+    "Office of the US Trade Representative": ("ustr", "the ustr",
+                                              "trade representative"),
     "Department of Education": ("ed", "education dept", "department of education"),
     "Department of Energy": ("doe", "energy dept", "department of energy"),
     "Department of the Treasury": ("treasury", "treasury dept",
@@ -138,7 +169,8 @@ RECIPIENTS: dict[str, tuple[str, ...]] = {
                                      "department of transportation"),
     "Department of the Interior": ("doi", "interior dept", "interior"),
     "Department of Labor": ("dol", "labor dept", "department of labor"),
-    "Department of Commerce": ("commerce dept", "department of commerce"),
+    "Department of Commerce": ("commerce dept", "department of commerce",
+                              "commerce", "the commerce department"),
     "Food and Drug Administration": ("fda", "the fda"),
     "Centers for Disease Control": ("cdc", "the cdc"),
     "Federal Communications Commission": ("fcc", "the fcc"),
@@ -149,6 +181,36 @@ RECIPIENTS: dict[str, tuple[str, ...]] = {
     "Federal Bureau of Investigation": ("fbi", "the fbi"),
     "Centers for Medicare and Medicaid Services": ("cms", "the cms"),
     "Consumer Financial Protection Bureau": ("cfpb", "the cfpb"),
+    "United States Postal Service": ("usps", "the usps", "postal service",
+                                     "postmaster general", "us postal service"),
+    "Immigration and Customs Enforcement": ("ice", "the ice"),
+    "Citizenship and Immigration Services": ("uscis", "the uscis"),
+    "Customs and Border Protection": ("cbp", "the cbp"),
+    "Bureau of Alcohol, Tobacco, Firearms and Explosives": ("atf", "the atf"),
+    "Bureau of Prisons": ("bop", "the bop"),
+    "Drug Enforcement Administration": ("dea", "the dea"),
+    "National Oceanic and Atmospheric Administration": ("noaa", "the noaa"),
+    "General Services Administration": ("gsa", "the gsa"),
+    "Office of the Comptroller of the Currency": ("occ", "the occ"),
+    "Commodity Futures Trading Commission": ("cftc", "the cftc"),
+    "National Highway Traffic Safety Administration": ("nhtsa", "the nhtsa"),
+    "Federal Reserve": ("fed", "the fed", "federal reserve",
+                        "the federal reserve", "frb", "powell",
+                        "fed chair", "federal reserve chair"),
+    "Army Corps of Engineers": ("usace", "army corps", "the army corps",
+                                "corps of engineers",
+                                "army corps of engineers"),
+    "Federal Aviation Administration": ("faa", "the faa"),
+    "Federal Housing Finance Agency": ("fhfa", "the fhfa"),
+    "Federal Deposit Insurance Corporation": ("fdic", "the fdic"),
+    "National Labor Relations Board": ("nlrb", "the nlrb"),
+    "Occupational Safety and Health Administration": ("osha", "the osha"),
+    "Federal Election Commission": ("fec", "the fec"),
+    "Transportation Security Administration": ("tsa", "the tsa"),
+    "National Aeronautics and Space Administration": ("nasa", "the nasa"),
+    "Office of the Inspector General": ("ig", "oig", "inspector general",
+                                        "the inspector general"),
+    "Government Publishing Office": ("gpo", "the gpo"),
     "Election Assistance Commission": ("eac", "the eac"),
     "Federal Energy Regulatory Commission": ("ferc", "the ferc"),
     "Office of Personnel Management": ("opm", "the opm"),
@@ -159,7 +221,8 @@ RECIPIENTS: dict[str, tuple[str, ...]] = {
     "Nuclear Regulatory Commission": ("nrc", "the nrc"),
     "The President": ("president", "the president", "potus",
                       "president trump", "president biden", "president obama",
-                      "white house", "wh", "the white house"),
+                      "white house", "wh", "the white house",
+                      "pres biden", "pres trump", "pres obama"),
 }
 
 # Named officials, mapped to the office they held. Without this the recipient
@@ -208,11 +271,37 @@ OFFICIALS: dict[str, tuple[str, ...]] = {
     "Centers for Disease Control": ("redfield", "walensky", "cohen",
                                     "monarez"),
     "Food and Drug Administration": ("califf", "hahn", "gottlieb", "makary"),
+    "Department of Commerce": ("ross", "raimondo", "lutnick", "pritzker"),
+    "Federal Bureau of Investigation": ("wray", "comey", "patel", "mueller"),
+    "United States Postal Service": ("dejoy", "brennan", "donahoe"),
+    "The Vice President": ("pence", "vice president", "the vice president",
+                           "vp", "vance"),
+}
+
+# Congressional leadership, written to as often as any agency. Grouping the
+# titles keeps "Speaker Johnson", "Speaker Pelosi" and a bare "Speaker" from
+# being three correspondents, while leaving the party leaders as themselves.
+LEADERSHIP: dict[str, tuple[str, ...]] = {
+    "The Speaker of the House": ("speaker", "the speaker", "speaker pelosi",
+                                 "speaker ryan", "speaker johnson",
+                                 "speaker boehner", "speaker mccarthy"),
+    # Bare surnames of party leaders. A letter addressed to McConnell or
+    # Schumer is addressed to them as leader; split out individually they
+    # fragment a facet that exists to show who Congress writes to. Where the
+    # slug names the office instead - "speaker pelosi" - that wins, because it
+    # is more specific.
+    "Congressional leadership": ("leadership", "congressional leadership",
+                                 "colleagues", "dear colleague",
+                                 "house leadership", "senate leadership",
+                                 "appropriators", "approps",
+                                 "appropriations leaders",
+                                 "mcconnell", "schumer", "pelosi", "jeffries",
+                                 "thune", "majority leader", "minority leader"),
 }
 
 RECIPIENT_LOOKUP = {
     spelling: canonical
-    for mapping in (RECIPIENTS, OFFICIALS)
+    for mapping in (RECIPIENTS, OFFICIALS, LEADERSHIP)
     for canonical, spellings in mapping.items()
     for spelling in spellings
 }
@@ -234,13 +323,24 @@ NOT_A_RECIPIENT = re.compile(
     r"^(?:[a-z]{1,2}|\d+|[a-z]\d+|re|cc|fw|final|draft|signed|copy|letter"
     r"|attachment|attach|encl|pdf|doc|v\d+)$", re.IGNORECASE)
 
+# A slug written with no separators at all, where the description has fused
+# into the name: "Ahold Delhaize Repricegouginginstopshopsinmassachusetts"
+# counted as a correspondent 59 times. No real name or agency has a
+# seventeen-letter single word in it — "Representatives" is fifteen,
+# "Administration" fourteen.
+RUN_TOGETHER = re.compile(r"[A-Za-z]{17,}")
+
 
 def readable(key: str) -> str:
     """The part of a URL a person would read, as words."""
     path = key.split("?", 1)[0]
     parts = [LEADING_UNDERSCORE.sub("", p) for p in path.split("/")[1:] if p]
+    # Sites spell the same folder both ways — wysiwyg_uploaded and
+    # wysiwyg-uploaded — so the furniture list is matched against one spelling
+    # rather than needing an entry for each.
     parts = [p for p in parts
-             if p and not PATH_NOISE.match(p)
+             if p and not PATH_NOISE.match(p.replace("_", "-"))
+             and not HOSTNAME_SEGMENT.match(p)
              and not re.fullmatch(r"[0-9a-f]{8,}", p, re.IGNORECASE)
              and not re.fullmatch(r"[0-9a-f-]{30,}", p, re.IGNORECASE)
              and not re.fullmatch(r"\d{1,4}", p)
@@ -402,12 +502,36 @@ def canonical_recipient(raw: str) -> tuple[str | None, str | None, str]:
     # Not a name we know. Keep it only if it reads like one.
     if NOT_A_RECIPIENT.match(cleaned) or len(cleaned) < 3:
         return None, None, cleaned
+    if RUN_TOGETHER.search(cleaned):
+        return None, None, cleaned
     if all(len(w) <= 2 for w in words):
         return None, None, cleaned
     # Four words is already a long way for a name; beyond that it is prose.
     if len(words) > 4:
         return None, None, cleaned
     return cleaned, cleaned.title(), ""
+
+
+def known_recipient(text: str) -> tuple[str, str] | None:
+    """Resolve a phrase ONLY against the known vocabulary, never by guesswork.
+
+    Used to rescue a recipient that is sitting in the subject because the slug
+    never said "letter to": a file called ``hhs-letter_041525.pdf`` names its
+    recipient and no pattern was going to find it there. 211 letters were
+    described as "hhs", "fda", "usps", "doj" or "cms" — each of them an
+    agency this module can already name.
+
+    Guessing is what makes this safe to do at all. Only a phrase already in
+    the lookup is promoted, so a subject that merely reads like a name stays
+    where it is.
+    """
+    words = re.sub(r"\s+", " ", (text or "")).strip().lower().split()
+    for size in range(min(5, len(words)), 0, -1):
+        probe = " ".join(words[:size])
+        canon = RECIPIENT_LOOKUP.get(probe.rstrip("."))
+        if canon:
+            return probe, canon
+    return None
 
 
 def parse(record: dict, last_name: str,
@@ -447,6 +571,45 @@ def parse(record: dict, last_name: str,
             if recipient:
                 tail = tail.replace(recipient.lower(), " ")
         subject = re.sub(r"\s+", " ", f"{topic} {tail}").strip()
+
+    if subject and recipient_canonical:
+        # Overflow that names the same correspondent is not a subject.
+        # "letter to ag garland" resolves on "ag" and leaves "garland" behind,
+        # which then describes the letter as "garland".
+        same = known_recipient(subject)
+        if same and same[1] == recipient_canonical:
+            subject = " ".join(subject.split()[len(same[0].split()):])
+
+    if subject:
+        # The honorific belongs to the recipient, not to the subject. Without
+        # this, "letter to secretary cardona" resolves Cardona correctly and
+        # then describes the letter as "secretary" — 149 of them did.
+        # Role verbs go the same way: "urging", "calling" describe the act of
+        # writing, not what the letter is about.
+        subject = " ".join(
+            w for w in subject.split()
+            if w.upper().strip(".") not in HONORIFICS
+            and w.lower() not in ROLE_VERBS)
+        # A subject made only of digits is a fragment of a filename.
+        if not re.search(r"[a-z]{2}", subject, re.IGNORECASE):
+            subject = ""
+        # "dhs_ig" and "hud-ig-letter" name a department's Inspector General.
+        # The department is the recipient and "ig" qualifies it; on its own it
+        # describes nothing.
+        if recipient_canonical and subject.lower() in {
+                "ig", "oig", "inspector general", "sec", "secretary",
+                "admin", "office", "dept", "department"}:
+            subject = ""
+
+    # A recipient stranded in the subject, because the slug never said
+    # "letter to". Only promoted when the vocabulary already knows the name.
+    if not recipient_canonical and subject:
+        hit = known_recipient(subject)
+        if hit:
+            phrase, recipient_canonical = hit
+            recipient = phrase
+            remainder = subject.split()[len(phrase.split()):]
+            subject = " ".join(remainder)
 
     if subject:
         # The topic and the tail can name the same thing twice — "send send",

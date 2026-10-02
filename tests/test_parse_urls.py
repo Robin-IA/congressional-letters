@@ -78,6 +78,15 @@ class Keep(unittest.TestCase):
         self.assertFalse(keep(letter(
             "x.house.gov/media/letters?page=4", mimetype="text/html")))
 
+    def test_rejects_a_section_index_page(self):
+        # /media-center/letters is the listing, not a letter. The depth rule
+        # cannot catch these because the word IS the last segment.
+        for url in ("bishop.house.gov/media-center/letters",
+                    "adams.house.gov/posts/letter",
+                    "x.house.gov/media/letters-0"):
+            self.assertFalse(keep(letter(url, mimetype="text/html")), url)
+        self.assertTrue(keep(letter("x.house.gov/a/real-letter-to-epa.pdf")))
+
 
 class Canonical(unittest.TestCase):
     def test_collapses_viewer_variants(self):
@@ -225,6 +234,18 @@ class Recipients(unittest.TestCase):
         self.assertIsNone(canonical_recipient(
             "the many agencies that have not yet responded to us")[0])
 
+    def test_rejects_a_run_together_slug_as_a_name(self):
+        # "Ahold Delhaize Repricegouginginstopshopsinmassachusetts" counted as
+        # a correspondent 59 times.
+        name, canon, _ = canonical_recipient(
+            "ahold delhaize repricegouginginstopshopsinmassachusetts")
+        self.assertIsNone(canon)
+
+    def test_groups_the_speaker(self):
+        for spelling in ("speaker johnson", "speaker pelosi", "speaker"):
+            self.assertEqual(canonical_recipient(spelling)[1],
+                             "The Speaker of the House")
+
     def test_prefers_the_longest_known_name(self):
         name, canon, _ = canonical_recipient("department of justice")
         self.assertEqual(canon, "Department of Justice")
@@ -289,6 +310,41 @@ class EndToEnd(unittest.TestCase):
         self.assertIsNone(out["date"])
         self.assertEqual(out["date_best"], "2016-03-12")
         self.assertEqual(out["date_precision"], "captured-by")
+
+    def test_rescues_a_recipient_stranded_in_the_subject(self):
+        # "hhs-letter_041525.pdf" never says "letter to", so no pattern finds
+        # the recipient and it ends up as the description instead. 211 letters
+        # were described as "hhs", "fda", "usps", "doj" or "cms".
+        out = parse(letter(
+            "x.senate.gov/wp-content/uploads/2025/04/hhs-letter_041525.pdf"),
+            "Alsobrooks")
+        self.assertEqual(out["recipient_canonical"],
+                         "Department of Health and Human Services")
+        self.assertEqual(out["date"], "2025-04-15")
+
+    def test_does_not_invent_a_recipient_from_an_unknown_subject(self):
+        # Promotion is safe only because it consults the vocabulary. A subject
+        # that merely reads like a name stays a subject.
+        out = parse(letter("x.senate.gov/a/sprocket-widget-letter.pdf"),
+                    "Baldwin")
+        self.assertIsNone(out["recipient_canonical"])
+
+    def test_keeps_the_honorific_out_of_the_subject(self):
+        # "letter to secretary cardona" resolved Cardona and then described
+        # the letter as "secretary".
+        out = parse(letter("x.senate.gov/download/letter-to-secretary-cardona",
+                           mimetype="text/html"), "Baldwin")
+        self.assertEqual(out["recipient_canonical"], "Department of Education")
+        self.assertIsNone(out["subject"])
+
+    def test_drops_a_hostname_from_the_path(self):
+        # Drupal stores uploads under the site's own hostname, which made 194
+        # letters read "house gov".
+        out = parse(letter("buchanan.house.gov/sites/buchanan.house.gov/files/"
+                           "letter to ssa 12.16.2014.pdf"), "Buchanan")
+        self.assertEqual(out["recipient_canonical"],
+                         "Social Security Administration")
+        self.assertNotIn("house", (out["subject"] or ""))
 
     def test_leaves_a_topic_named_letter_without_a_recipient(self):
         # "2022 crab disaster letter" names no recipient, and inventing one

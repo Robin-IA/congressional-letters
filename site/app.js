@@ -478,8 +478,10 @@ function viewRecipients() {
   const out = el('div', {},
     el('p', { class: 'hero' }, 'Who Congress writes to.'),
     el('p', { class: 'sub' },
-      el('b', {}, num(all.length)),
-      ' agencies, officials and companies named in the filenames of these letters. ',
+      el('b', {}, num(INDEX.recipients_total || all.length)),
+      ' agencies, officials and companies are named in the filenames of these letters',
+      INDEX.recipients_total && INDEX.recipients_total > all.length
+        ? `; the ${num(all.length)} written to most often are below. ` : '. ',
       'Agency abbreviations and the officials who ran them are folded together, so ',
       'letters to Scott Pruitt and letters to the EPA count once.'),
     el('div', { class: 'controls' },
@@ -494,7 +496,7 @@ function viewRecipients() {
           if (box) { box.focus(); box.setSelectionRange(box.value.length, box.value.length); }
         },
       }),
-      el('span', { class: 'count tab' }, `${num(list.length)} recipients`)),
+      el('span', { class: 'count tab' }, `showing ${num(list.length)}`)),
     grid);
   if (list.length > limit) {
     out.append(el('button', {

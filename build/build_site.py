@@ -164,7 +164,10 @@ def main() -> None:
         "kinds": dict(kinds),
         "precisions": dict(precisions),
         "roles": dict(roles),
+        # The page shows the top 200 but must not report that as the total:
+        # there are thousands, most of them named once.
         "recipients": recipients.most_common(200),
+        "recipients_total": len(recipients),
         "thumbs": sum(1 for rows in by_member.values()
                       for row in rows if row[9]),
         "thumb_base": "thumbs/",
