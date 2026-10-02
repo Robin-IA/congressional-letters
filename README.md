@@ -121,6 +121,25 @@ failed. Three passes took 58 failures down to a handful.
 - **Search covers filenames, not letters.** With no text layer in three
   quarters of the PDFs, there is nothing else to search until they are OCR'd.
 
+## Deploying
+
+`deploy/` holds the landing-page tile, a cover image, and a contingency
+daemon. See [deploy/README.md](deploy/README.md) — and note that the studio
+mechanism is **inferred** from `internetarchivecanada/meetings` rather than
+confirmed, because the `service` tooling lives on the studio and not in any
+repository.
+
+The explorer is static and works behind a path prefix: served under
+`/letters-from-congress/` it loads with no console errors and fetches its
+per-member data correctly, because every path in it is relative. So if Caddy
+can serve `site/` from disk, there is no process to run.
+
+Either host works. The studio is preferable only because ~1.3 GB of rendered
+first pages fit on its disk and not in a GitHub Pages repository — which is
+why the North Korea explorer keeps its screenshots on an archive.org item.
+`thumb_base` in `site/data/index.json` exists so that choice stays
+reversible.
+
 ## Rebuilding
 
 ```bash

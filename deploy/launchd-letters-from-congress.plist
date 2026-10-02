@@ -1,0 +1,43 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Only needed if the studio's `service` tool has no static type and this has
+  to run as a process like community-meetings does. If Caddy can serve
+  site/ from disk, delete this and serve.py both.
+
+  Naming follows the studio's existing daemons: com.wbmstudio.<service>.
+  Install to /Library/LaunchDaemons/ and load with launchctl, or let
+  `service enable` do it.
+-->
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
+  "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.wbmstudio.letters-from-congress</string>
+
+  <key>ProgramArguments</key>
+  <array>
+    <string>/usr/bin/python3</string>
+    <string>/opt/services/letters-from-congress/deploy/serve.py</string>
+  </array>
+
+  <key>WorkingDirectory</key>
+  <string>/opt/services/letters-from-congress</string>
+
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>PORT</key>
+    <string>8352</string>
+  </dict>
+
+  <key>RunAtLoad</key>
+  <true/>
+  <key>KeepAlive</key>
+  <true/>
+
+  <key>StandardOutPath</key>
+  <string>/var/log/letters-from-congress.log</string>
+  <key>StandardErrorPath</key>
+  <string>/var/log/letters-from-congress.log</string>
+</dict>
+</plist>
