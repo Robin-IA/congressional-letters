@@ -123,22 +123,19 @@ failed. Three passes took 58 failures down to a handful.
 
 ## Deploying
 
-`deploy/` holds the landing-page tile, a cover image, and a contingency
-daemon. See [deploy/README.md](deploy/README.md) — and note that the studio
-mechanism is **inferred** from `internetarchivecanada/meetings` rather than
-confirmed, because the `service` tooling lives on the studio and not in any
-repository.
+`deploy/` holds the landing-page tile, a cover built from real first pages,
+and a contingency daemon. See [deploy/README.md](deploy/README.md).
 
-The explorer is static and works behind a path prefix: served under
-`/letters-from-congress/` it loads with no console errors and fetches its
-per-member data correctly, because every path in it is relative. So if Caddy
-can serve `site/` from disk, there is no process to run.
+`site/` is the whole explorer: static, no build step, and verified to work
+behind a path prefix (`/letters-from-congress/` loads clean, because every
+path in it is relative). It can be served from GitHub Pages, as
+`internetarchivecanada/northkorea-viewer` is, or from a path on labs, as the
+other 31 explorers are.
 
-Either host works. The studio is preferable only because ~1.3 GB of rendered
-first pages fit on its disk and not in a GitHub Pages repository — which is
-why the North Korea explorer keeps its screenshots on an archive.org item.
-`thumb_base` in `site/data/index.json` exists so that choice stays
-reversible.
+The only thing the choice decides is where `site/thumbs/` lives — ~1.3 GB when
+complete, gitignored, and so never carried by the repository. Set
+`thumb_base` in `site/data/index.json` to an archive.org download URL for the
+Pages route, or leave it as `thumbs/` to serve them from disk.
 
 ## Rebuilding
 
