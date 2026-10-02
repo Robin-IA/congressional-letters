@@ -22,13 +22,24 @@ belong in a git repository: the explorer reads ``thumb_base`` from index.json,
 so the files can be served from an archive.org item the way the North Korea
 explorer serves its screenshot zips.
 
-Politeness
-----------
-This fetches tens of thousands of files from web.archive.org. Concurrency is
-deliberately low, failures are recorded and skipped rather than retried
-forever, and the whole thing is resumable — a thumbnail that exists is never
-fetched again. It is also optional: the explorer works without any of them and
-improves as they land.
+Politeness, which is not optional here
+--------------------------------------
+This fetches tens of thousands of multi-megabyte files from one host. At four
+workers it rate-limited itself within a few hundred requests: of 400 attempts
+only 81 rendered, and a direct check of the next twelve returned eight
+connection errors, three 503s and one 500 — every single one a failure.
+
+That is the same wall an earlier congressional survey hit from the other
+direction, where checking 536 sites at ten workers took the success rate from
+534 to 404 and the throttling persisted into later, gentler runs. A rate limit
+earned at high concurrency is not escaped by backing off afterwards, so the
+defaults here are deliberately slow: two workers, a pause between requests,
+and exponential backoff whenever the server says 429 or 5xx.
+
+None of this is urgent. The explorer works with no thumbnails at all and
+improves as they land, so this can run for days in the background. It is
+resumable — a rendered thumbnail is never fetched twice — and a failure is
+recorded and skipped rather than retried forever.
 """
 
 from __future__ import annotations
@@ -75,7 +86,7 @@ def render(blob: bytes, out_path: Path) -> None:
         document.close()
 
 
-def one(record: dict, thumbs: Path) -> str:
+def one(record: dict, thumbs: Path, pause: float, retries: int) -> str:
     digest = record.get("digest") or ""
     if not digest:
         return "no-digest"
@@ -83,22 +94,33 @@ def one(record: dict, thumbs: Path) -> str:
     if out_path.exists():
         return "cached"
 
-    try:
-        request = urllib.request.Request(wayback_url(record), headers=UA)
-        with urllib.request.urlopen(request, timeout=TIMEOUT) as response:
-            blob = response.read(MAX_BYTES + 1)
-        if len(blob) > MAX_BYTES:
-            return "too-big"
-        if not blob.startswith(b"%PDF"):
-            return "not-pdf"
-        staged = out_path.with_suffix(".part")
-        render(blob, staged)
-        staged.replace(out_path)
-        return "rendered"
-    except urllib.error.HTTPError as exc:
-        return f"http-{exc.code}"
-    except Exception as exc:  # noqa: BLE001
-        return type(exc).__name__
+    last = "unknown"
+    for attempt in range(retries):
+        if pause:
+            time.sleep(pause)
+        try:
+            request = urllib.request.Request(wayback_url(record), headers=UA)
+            with urllib.request.urlopen(request, timeout=TIMEOUT) as response:
+                blob = response.read(MAX_BYTES + 1)
+            if len(blob) > MAX_BYTES:
+                return "too-big"
+            if not blob.startswith(b"%PDF"):
+                return "not-pdf"
+            staged = out_path.with_suffix(".part")
+            render(blob, staged)
+            staged.replace(out_path)
+            return "rendered"
+        except urllib.error.HTTPError as exc:
+            last = f"http-{exc.code}"
+            # 404 means this capture is not replayable; nothing will change
+            # that. 429 and 5xx mean slow down.
+            if exc.code not in (429, 500, 502, 503, 504):
+                return last
+            time.sleep(min(90, 10 * (2 ** attempt)))
+        except Exception as exc:  # noqa: BLE001
+            last = type(exc).__name__
+            time.sleep(min(90, 8 * (2 ** attempt)))
+    return last
 
 
 def main() -> None:
@@ -107,7 +129,11 @@ def main() -> None:
     parser.add_argument("--parsed", type=Path,
                         default=root / "data" / "letters-parsed.jsonl")
     parser.add_argument("--thumbs", type=Path, default=root / "site" / "thumbs")
-    parser.add_argument("--workers", type=int, default=4)
+    parser.add_argument("--workers", type=int, default=2,
+                        help="keep this low; see the module docstring")
+    parser.add_argument("--pause", type=float, default=0.75,
+                        help="seconds to wait before each request")
+    parser.add_argument("--retries", type=int, default=3)
     parser.add_argument("--max", type=int, default=0,
                         help="stop after this many renders (0 = no limit)")
     parser.add_argument("--per-member", type=int, default=0,
@@ -147,7 +173,8 @@ def main() -> None:
     started = time.time()
     done = 0
     with cf.ThreadPoolExecutor(max_workers=args.workers) as pool:
-        futures = {pool.submit(one, j, args.thumbs): j for j in pending}
+        futures = {pool.submit(one, j, args.thumbs, args.pause,
+                               args.retries): j for j in pending}
         for future in cf.as_completed(futures):
             try:
                 outcome = future.result()

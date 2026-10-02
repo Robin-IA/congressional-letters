@@ -1,8 +1,7 @@
-# What Congress Asked
+# Letters from Congress
 
-Oversight letters published on sitting members of Congress's own websites and
-preserved by the Wayback Machine. Who each member wrote to, what they demanded,
-and when — organised by member.
+Letters published on sitting members of Congress's own websites and preserved
+by the Wayback Machine, organised by member: who each one wrote to, and when.
 
 One static page over a small index plus one file per member. No server, no
 database.

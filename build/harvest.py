@@ -320,6 +320,8 @@ def main() -> None:
     parser.add_argument("--workers", type=int, default=3)
     parser.add_argument("--limit", type=int, default=0,
                         help="probe only the first N members")
+    parser.add_argument("--export-only", action="store_true",
+                        help="re-filter the cache without touching the network")
     args = parser.parse_args()
 
     args.cache.mkdir(parents=True, exist_ok=True)
@@ -330,10 +332,11 @@ def main() -> None:
                                 encoding="utf-8")
     print(f"{len(members)} members", file=sys.stderr)
 
-    todo = [m for m in members
-            if not (args.cache / f"{m['host']}.json").exists()
-            or "error" in json.loads(
-                (args.cache / f"{m['host']}.json").read_text(encoding="utf-8"))]
+    todo = [] if args.export_only else [
+        m for m in members
+        if not (args.cache / f"{m['host']}.json").exists()
+        or "error" in json.loads(
+            (args.cache / f"{m['host']}.json").read_text(encoding="utf-8"))]
     print(f"  {len(todo)} to query ({len(members) - len(todo)} cached)",
           file=sys.stderr)
 

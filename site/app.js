@@ -1,4 +1,4 @@
-// What Congress Asked — oversight letters from members' own websites.
+// Letters from Congress — letters published on members' own websites.
 //
 // One static page over a small index plus one file per member, fetched when
 // that member is opened. Nothing is kept outside the URL, so every view is a
@@ -348,8 +348,7 @@ function viewMembers() {
   }
 
   const out = el('div', {},
-    el('p', { class: 'hero' },
-      'What has your member of Congress demanded, and of whom?'),
+    el('p', { class: 'hero' }, 'Letters from Congress.'),
     el('p', { class: 'sub' },
       el('b', {}, num(INDEX.letters)), ' letters published on ',
       el('b', {}, num(INDEX.members_with_letters)),
@@ -780,9 +779,9 @@ async function render() {
   const box = $('#q');
   if (box && view === 'search') box.value = p.get('q') || '';
   document.title = p.get('member')
-    ? `${byId.get(p.get('member'))?.name || 'Member'} · What Congress Asked`
-    : p.get('to') ? `${p.get('to')} · What Congress Asked`
-      : 'What Congress Asked · Internet Archive';
+    ? `${byId.get(p.get('member'))?.name || 'Member'} · Letters from Congress`
+    : p.get('to') ? `${p.get('to')} · Letters from Congress`
+      : 'Letters from Congress · Internet Archive';
 }
 
 async function boot() {

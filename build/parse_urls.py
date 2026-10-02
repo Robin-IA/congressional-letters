@@ -43,8 +43,15 @@ from pathlib import Path
 PATH_NOISE = re.compile(
     r"^(news|newsroom|press|press-releases?|releases?|media|download|downloads"
     r"|public|sites|default|files|imo|doc|docs|documents|wp-content|uploads"
-    r"|_cache|cache|index\.cfm|content|assets|about|issues|upload|audio"
-    r"|newsroom-news-releases|news-releases)$", re.IGNORECASE)
+    r"|cache|index\.cfm|content|assets|about|issues|upload|audio"
+    r"|newsroom-news-releases|news-releases|reference|reference_item"
+    r"|bookjackets|common|image|images|item|stories|pdf|attachments"
+    r"|sites-default-files|general|shared|resources|static)$", re.IGNORECASE)
+
+# Site builders prefix internal folders with an underscore — /public/_files/,
+# /_cache/ — and without stripping it the folder name survives into the
+# description, so every Barrasso letter began with the word "Files".
+LEADING_UNDERSCORE = re.compile(r"^_+")
 
 EXTENSION = re.compile(r"\.(pdf|html?|aspx|cfm|docx?|txt)$", re.IGNORECASE)
 
@@ -61,6 +68,8 @@ DATE_PATTERNS = [
     (re.compile(rf"\b(20[0-2]\d){SEP}([01]?\d){SEP}([0-3]?\d)\b"), "ymd"),
     (re.compile(rf"\b([01]?\d){SEP}([0-3]?\d){SEP}(20[0-2]\d)\b"), "mdy"),
     (re.compile(r"\b([01]\d)([0-3]\d)(20[0-2]\d)\b"), "mdy"),
+    # "20130624fhfaletter" — year first, no separators.
+    (re.compile(r"\b(20[0-2]\d)([01]\d)([0-3]\d)\b"), "ymd"),
     (re.compile(rf"\b([01]?\d){SEP}([0-3]?\d){SEP}([0-2]\d)\b"), "mdy2"),
     (re.compile(r"\b([01]\d)([0-3]\d)([0-2]\d)\b"), "mdy2"),
 ]
@@ -229,9 +238,9 @@ NOT_A_RECIPIENT = re.compile(
 def readable(key: str) -> str:
     """The part of a URL a person would read, as words."""
     path = key.split("?", 1)[0]
-    parts = [p for p in path.split("/")[1:] if p]
+    parts = [LEADING_UNDERSCORE.sub("", p) for p in path.split("/")[1:] if p]
     parts = [p for p in parts
-             if not PATH_NOISE.match(p)
+             if p and not PATH_NOISE.match(p)
              and not re.fullmatch(r"[0-9a-f]{8,}", p, re.IGNORECASE)
              and not re.fullmatch(r"[0-9a-f-]{30,}", p, re.IGNORECASE)
              and not re.fullmatch(r"\d{1,4}", p)
@@ -244,6 +253,23 @@ def readable(key: str) -> str:
     text = re.sub(r"\b[0-9a-f]{16,}\b", " ", text, flags=re.IGNORECASE)
     text = re.sub(r"[-_.+]+", " ", text)
     text = re.sub(r"%\w\w", " ", text)
+    # Filenames written without separators: "fdaletter", "usdaletter03212013",
+    # "20130624fhfaletter". The word has to be prised off its neighbours, or
+    # the recipient stays glued to it and the date never meets a word boundary.
+    #
+    # Digits first, so that "usdaletter03212013" has become "usdaletter
+    # 03212013" before the word split runs — otherwise neither side of
+    # "letter" has the boundary a \b would need.
+    # Six digits is the threshold because it frees "04252013" while leaving
+    # "fy11" and "h1n1" alone.
+    text = re.sub(r"(?<=[a-z])(\d{6,})", r" \1", text, flags=re.IGNORECASE)
+    text = re.sub(r"(\d{6,})(?=[a-z])", r"\1 ", text, flags=re.IGNORECASE)
+    # One pass, both sides at once. Two separate substitutions split the same
+    # word twice — "olivialetters" became "olivia letter s", because the
+    # second rule fired on the "s" the first had just exposed.
+    text = re.sub(r"([a-z]*)(letters?)([a-z0-9]*)",
+                  lambda m: " ".join(p for p in m.groups() if p),
+                  text, flags=re.IGNORECASE)
     # Percent-escapes that were not UTF-8 survive unquoting as surrogates, and
     # a name like Luján arrives as a lone broken byte.
     text = "".join(c for c in text if c.isprintable() and not 0xDC00 <= ord(c) <= 0xDFFF)
@@ -410,10 +436,16 @@ def parse(record: dict, last_name: str,
         # plus the topic words that sat in front of it: "2022 crab disaster
         # letter" is about a crab disaster, and that is stated before the noun
         # rather than after it.
-        tail = re.sub(r"\b(letters?|to|of|on|re|regarding|from)\b", " ",
-                      from_letter or body, flags=re.IGNORECASE)
-        if recipient:
-            tail = tail.replace(recipient.lower(), " ")
+        # When the slug has no "letter" token at all, split_role hands the
+        # whole thing back as the topic and nothing as the remainder. Deriving
+        # a tail from the same slug printed every such subject twice:
+        # "files barrasso va letter1 files barrasso va letter1".
+        tail = ""
+        if from_letter:
+            tail = re.sub(r"\b(letters?|to|of|on|re|regarding|from)\b", " ",
+                          from_letter, flags=re.IGNORECASE)
+            if recipient:
+                tail = tail.replace(recipient.lower(), " ")
         subject = re.sub(r"\s+", " ", f"{topic} {tail}").strip()
 
     if subject:

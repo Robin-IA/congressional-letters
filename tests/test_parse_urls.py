@@ -110,6 +110,21 @@ class Readable(unittest.TestCase):
                      "letter to mcgahn on law enforcement contacts.pdf"),
             "letter to mcgahn on law enforcement contacts")
 
+    def test_splits_a_filename_written_without_separators(self):
+        # Warren's older files are "fdaletter.pdf", "usdaletter03212013.pdf",
+        # "20130624fhfaletter.pdf". Left glued, the recipient stays stuck to
+        # the word and the date never meets a word boundary.
+        self.assertEqual(readable("x.gov/a/fdaletter.pdf"), "fda letter")
+        self.assertEqual(readable("x.gov/a/usdaletter03212013.pdf"),
+                         "usda letter 03212013")
+        self.assertEqual(readable("x.gov/a/20130624fhfaletter.pdf"),
+                         "20130624 fhfa letter")
+
+    def test_does_not_split_short_alphanumerics(self):
+        # Six digits is the threshold so that these survive intact.
+        self.assertIn("fy11", readable("x.gov/a/fy11_defense_letter.pdf"))
+        self.assertIn("h1n1", readable("x.gov/a/h1n1-letter-to-cdc.pdf"))
+
     def test_drops_hash_directories(self):
         text = readable("klobuchar.senate.gov/public/_cache/files/0/2/02ee4ad5-"
                         "cc35-4abd-9a16-0f51902e5d4a/"
@@ -132,6 +147,9 @@ class Dates(unittest.TestCase):
         self.assertEqual(
             find_date("x", "02142020 letter to epa on pfas action plan")[0],
             "2020-02-14")
+
+    def test_reads_a_run_together_year_first_date(self):
+        self.assertEqual(find_date("x", "20130624 fhfa letter")[0], "2013-06-24")
 
     def test_reads_a_two_digit_year(self):
         self.assertEqual(find_date("x", "042310 letter to reid")[0],
