@@ -123,19 +123,14 @@ failed. Three passes took 58 failures down to a handful.
 
 ## Deploying
 
-`deploy/` holds the landing-page tile, a cover built from real first pages,
-and a contingency daemon. See [deploy/README.md](deploy/README.md).
+Runs the way [etd-viewer](https://github.com/internetarchivecanada/etd-viewer)
+does: a static page on GitHub Pages serving from the repository root, with the
+bulk of the data in an archive.org item the browser reads directly — item
+downloads carry `Access-Control-Allow-Origin: *`, so no server is involved.
 
-`site/` is the whole explorer: static, no build step, and verified to work
-behind a path prefix (`/letters-from-congress/` loads clean, because every
-path in it is relative). It can be served from GitHub Pages, as
-`internetarchivecanada/northkorea-viewer` is, or from a path on labs, as the
-other 31 explorers are.
-
-The only thing the choice decides is where `site/thumbs/` lives — ~1.3 GB when
-complete, gitignored, and so never carried by the repository. Set
-`thumb_base` in `site/data/index.json` to an archive.org download URL for the
-Pages route, or leave it as `thumbs/` to serve them from disk.
+`index.json` (~160 KB) sits in the repository so the page paints immediately.
+`payload/` — 511 per-member files and the rendered first pages — is gitignored
+and uploaded with `build/upload_item.py`. See [deploy/README.md](deploy/README.md).
 
 ## Rebuilding
 

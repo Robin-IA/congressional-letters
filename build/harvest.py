@@ -63,6 +63,7 @@ import time
 import urllib.error
 import urllib.parse
 import urllib.request
+from datetime import date
 from pathlib import Path
 
 CDX = "http://web.archive.org/cdx/search/cdx"
@@ -75,6 +76,17 @@ UA = {"User-Agent": "ia-congressional-member-letters/0.1 "
 TIMEOUT = 300
 RETRIES = 3
 PER_HOST_CAP = 60_000
+
+# Years per request. Eight gives four windows over 1996-2026, which is enough
+# to let the expensive scans finish while keeping the request count to roughly
+# 2,100 across 539 hosts rather than 4,300.
+PARTITION_SPAN = 8
+
+# Stamped into each cache entry. A cached host whose entry does not carry this
+# was enumerated by the old single-request path and cannot be trusted, so it
+# is re-queried rather than reused — which is what makes a re-harvest
+# resumable instead of all-or-nothing.
+CACHE_METHOD = "partitioned-v1"
 
 # Captures that are not documents. A site serves its error page with the
 # requested document's path still in the URL, so in the index these look
@@ -161,15 +173,21 @@ def fetch(url: str, *, timeout: int = TIMEOUT) -> str:
     raise RuntimeError(f"{type(last).__name__}: {str(last)[:100]}")
 
 
-def cdx_rows(host: str, *, extra_filters: list[str] | None = None) -> list[dict]:
+def cdx_rows(host: str, *, extra_filters: list[str] | None = None,
+             date_from: str | None = None,
+             date_to: str | None = None) -> list[dict]:
     filters = ["statuscode:200", r"urlkey:.*letter.*",
                r"!urlkey:.*newsletter.*"] + (extra_filters or [])
+    params = [("url", host), ("matchType", "domain"),
+              ("collapse", "urlkey"), ("limit", PER_HOST_CAP),
+              ("showResumeKey", "true"),
+              ("fl", "original,timestamp,mimetype,length,digest")]
+    if date_from:
+        params.append(("from", date_from))
+    if date_to:
+        params.append(("to", date_to))
     query = urllib.parse.urlencode(
-        [("url", host), ("matchType", "domain"),
-         ("collapse", "urlkey"), ("limit", PER_HOST_CAP),
-         ("showResumeKey", "true"),
-         ("fl", "original,timestamp,mimetype,length,digest")]
-        + [("filter", f) for f in filters])
+        params + [("filter", f) for f in filters])
 
     body = fetch(f"{CDX}?{query}")
     out = []
@@ -190,6 +208,54 @@ def cdx_rows(host: str, *, extra_filters: list[str] | None = None) -> list[dict]
         raise RuntimeError(
             f"hit the {PER_HOST_CAP:,}-row cap; this host needs partitioning")
     return out
+
+
+def cdx_rows_partitioned(host: str, start: int = 1996,
+                         end: int | None = None, span: int = 4) -> list[dict]:
+    """The same query, split by date, unioned and de-duplicated.
+
+    Some hosts cannot be enumerated in one request. ``wicker.senate.gov``
+    truncates at the same 33,126 bytes every attempt — a response-size fault,
+    not a transient one, so retrying the identical request can never help.
+    ``carter.house.gov`` answers 504 just as reliably.
+
+    What makes this worth doing carefully rather than just catching the error:
+    **the truncated response does not always look like one.** Measured on
+    wicker.senate.gov, the single request returns HTTP 200 with 136 rows while
+    the same query split into five date ranges returns 181. A quarter of that
+    host's letters were missing from a response a less careful client would
+    have accepted as complete.
+
+    Partitions are tried widest-first and split in half on failure, down to a
+    single year, so an expensive host costs a few extra requests rather than a
+    fixed large number.
+    """
+    end = end or date.today().year
+    pending: list[tuple[int, int]] = []
+    year = start
+    while year <= end:
+        pending.append((year, min(year + span - 1, end)))
+        year += span
+
+    seen: dict[str, dict] = {}
+    failures: list[str] = []
+    while pending:
+        lo, hi = pending.pop(0)
+        try:
+            rows = cdx_rows(host, date_from=f"{lo}0101", date_to=f"{hi}1231")
+        except Exception as exc:  # noqa: BLE001
+            if lo == hi:
+                failures.append(f"{lo}: {type(exc).__name__}")
+                continue
+            mid = lo + (hi - lo) // 2
+            pending[:0] = [(lo, mid), (mid + 1, hi)]
+            continue
+        for row in rows:
+            seen.setdefault(row["url"] + row["timestamp"], row)
+
+    if failures and not seen:
+        raise RuntimeError("every partition failed: " + "; ".join(failures[:4]))
+    return list(seen.values())
 
 
 def canonical(url: str) -> str:
@@ -241,16 +307,31 @@ def harvest_host(member: dict, cache_dir: Path) -> dict:
     cache_path = cache_dir / f"{host}.json"
     if cache_path.exists():
         cached = json.loads(cache_path.read_text(encoding="utf-8"))
-        if "error" not in cached:
+        if "error" not in cached and cached.get("method") == CACHE_METHOD:
             return cached
 
     result: dict = {"host": host, "bioguide": member["bioguide"]}
+    # ALWAYS PARTITIONED. This was a fallback for hosts that errored, until
+    # wicker.senate.gov showed that the failure usually does not announce
+    # itself. Five attempts at the same unpartitioned query returned, in
+    # order: IncompleteRead at 33,126 bytes, then 136 rows, then 118, then
+    # 149 — against 181 when the query was split by date. Four different
+    # answers, all short, and only the first looked like a failure. One of
+    # the short ones was cached as a success.
+    #
+    # 33 KB is a small response, so what times out is the INDEX SCAN, and
+    # that cost tracks a host's total captures rather than its letter count.
+    # Any heavily crawled site is exposed, which is every site here. So the
+    # cheap path is not available: the only trustworthy enumeration is one
+    # where each request scans a narrow enough window to finish.
     try:
-        rows = cdx_rows(host)
+        rows = cdx_rows_partitioned(host, span=PARTITION_SPAN)
     except Exception as exc:  # noqa: BLE001
         result["error"] = str(exc)[:160]
         cache_path.write_text(json.dumps(result), encoding="utf-8")
         return result
+    result["method"] = CACHE_METHOD
+    result["span"] = PARTITION_SPAN
 
     result["rows"] = rows
     cache_path.write_text(json.dumps(result), encoding="utf-8")
@@ -333,17 +414,24 @@ def main() -> None:
 
     args.cache.mkdir(parents=True, exist_ok=True)
     members = load_members(args.cache)
+    # --limit bounds what is QUERIED, never what is exported. It used to slice
+    # the member list itself, so a three-host trial run quietly rewrote the
+    # dataset as three members and the explorer rebuilt around it.
+    all_members = members
     if args.limit:
         members = members[: args.limit]
     args.members_out.write_text(json.dumps(members, ensure_ascii=False),
                                 encoding="utf-8")
     print(f"{len(members)} members", file=sys.stderr)
 
-    todo = [] if args.export_only else [
-        m for m in members
-        if not (args.cache / f"{m['host']}.json").exists()
-        or "error" in json.loads(
-            (args.cache / f"{m['host']}.json").read_text(encoding="utf-8"))]
+    def needs_query(member: dict) -> bool:
+        path = args.cache / f"{member['host']}.json"
+        if not path.exists():
+            return True
+        cached = json.loads(path.read_text(encoding="utf-8"))
+        return "error" in cached or cached.get("method") != CACHE_METHOD
+
+    todo = [] if args.export_only else [m for m in members if needs_query(m)]
     print(f"  {len(todo)} to query ({len(members) - len(todo)} cached)",
           file=sys.stderr)
 
@@ -372,7 +460,7 @@ def main() -> None:
 
     total = raw_total = 0
     with args.out.open("w", encoding="utf-8") as sink:
-        for member in members:
+        for member in all_members:
             path = args.cache / f"{member['host']}.json"
             if not path.exists():
                 continue

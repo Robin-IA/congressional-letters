@@ -1,18 +1,28 @@
 #!/usr/bin/env python3
 """Bake the parsed letters into the JSON the explorer reads.
 
-Shape, and why it is split
---------------------------
-The corpus is large enough that one file would be a slow first paint —
-tens of thousands of letters at roughly 150 bytes each. It is also organised
-around members, so it splits along the axis people actually browse:
+Shape, and where each part lives
+--------------------------------
+Laid out the way internetarchivecanada/etd-viewer is: a small static page in
+the repository, and the bulk of the data in an archive.org item that the page
+streams client-side. Items serve ``Access-Control-Allow-Origin: *``, so the
+browser can read them directly — that one header is what makes the whole
+arrangement work, and it is why the ETD viewer can say "no server, no build".
 
-    data/index.json            every member, their counts and spans, the
-                               aggregate facets, the year histogram
-    data/member/<bioguide>.json  one member's letters, fetched when opened
+    index.json                   IN THE REPO. Every member, their counts and
+                                 spans, the facets, the year histogram. ~150 KB,
+                                 so the page paints immediately.
+    payload/member/<id>.json     IN AN ARCHIVE.ORG ITEM. One member's letters,
+                                 fetched when that member is opened. ~21 MB.
+    payload/thumbs/<digest>.jpg  IN AN ARCHIVE.ORG ITEM. Rendered first pages,
+                                 ~1.3 GB when complete.
 
-A visitor loads a small index and then one member at a time. The North Korea
-explorer splits per host for the same reason.
+``payload/`` is gitignored and uploaded by ``build/upload_item.py``. Keeping
+it out of the repository is not tidiness: 1.3 GB of thumbnails does not belong
+in a Pages repository, which is exactly why the North Korea explorer keeps its
+screenshots on an item too.
+
+A visitor loads the small index and then one member at a time.
 
 Letters are arrays rather than objects, with the column order carried in
 index.json so the page and the build cannot disagree about it.
@@ -61,9 +71,23 @@ def main() -> None:
                         default=root / "data" / "letters-parsed.jsonl")
     parser.add_argument("--members", type=Path,
                         default=root / "data" / "members.json")
-    parser.add_argument("--thumbs", type=Path, default=root / "site" / "thumbs")
-    parser.add_argument("--out", type=Path, default=root / "site" / "data")
+    # thumbs live under --payload; kept as a flag for odd layouts
+    parser.add_argument("--thumbs", type=Path, default=None)
+    parser.add_argument("--out", type=Path, default=root,
+                        help="where index.json is written (the repo root)")
+    parser.add_argument("--payload", type=Path, default=root / "payload",
+                        help="per-member files and thumbnails, uploaded separately")
+    parser.add_argument("--item", default="",
+                        help="archive.org item holding the payload; sets the "
+                             "base URLs the published page fetches from")
     args = parser.parse_args()
+
+    thumbs_dir = args.thumbs or (args.payload / "thumbs")
+    if args.item:
+        base = f"https://archive.org/download/{args.item}/"
+        data_base, thumb_base = base + "member/", base + "thumbs/"
+    else:
+        data_base, thumb_base = "payload/member/", "payload/thumbs/"
 
     member_rows = json.loads(args.members.read_text(encoding="utf-8"))
     members = {m["bioguide"]: m for m in member_rows}
@@ -97,7 +121,7 @@ def main() -> None:
             # also the thumbnail's filename. Identical letters captured many
             # times share one digest, so they share one rendering.
             digest = record.get("digest") or ""
-            has_thumb = bool(digest) and (args.thumbs / f"{digest}.jpg").exists()
+            has_thumb = bool(digest) and (thumbs_dir / f"{digest}.jpg").exists()
 
             by_member[bioguide].append([
                 record["key"], record["timestamp"], kind, best,
@@ -118,7 +142,7 @@ def main() -> None:
             if record.get("role"):
                 roles[record["role"]] += 1
 
-    out_member = args.out / "member"
+    out_member = args.payload / "member"
     if out_member.exists():
         shutil.rmtree(out_member)
     out_member.mkdir(parents=True, exist_ok=True)
@@ -170,7 +194,11 @@ def main() -> None:
         "recipients_total": len(recipients),
         "thumbs": sum(1 for rows in by_member.values()
                       for row in rows if row[9]),
-        "thumb_base": "thumbs/",
+        # Where the browser fetches the bulk data from. Relative paths serve
+        # a local checkout; --item rewrites both to an archive.org download
+        # URL for the published page.
+        "thumb_base": thumb_base,
+        "data_base": data_base,
         "members": index_members,
     }
     args.out.mkdir(parents=True, exist_ok=True)
@@ -180,10 +208,15 @@ def main() -> None:
 
     size = (args.out / "index.json").stat().st_size
     per_member_bytes = sum(p.stat().st_size for p in out_member.glob("*.json"))
-    print(f"  index.json      {size / 1024:>8,.0f} KB", file=sys.stderr)
-    print(f"  member/*.json   {per_member_bytes / 1024:>8,.0f} KB "
-          f"across {len(list(out_member.glob('*.json')))} files",
+    print(f"  index.json      {size / 1024:>8,.0f} KB   (in the repo)",
           file=sys.stderr)
+    thumb_bytes = sum(p.stat().st_size for p in thumbs_dir.glob("*.jpg"))         if thumbs_dir.exists() else 0
+    print(f"  member/*.json   {per_member_bytes / 1024:>8,.0f} KB "
+          f"across {len(list(out_member.glob('*.json')))} files   (payload)",
+          file=sys.stderr)
+    print(f"  thumbs/*.jpg    {thumb_bytes / 1024:>8,.0f} KB   (payload)",
+          file=sys.stderr)
+    print(f"  page fetches payload from: {data_base}", file=sys.stderr)
     print(f"\n{total:,} letters, "
           f"{index['members_with_letters']:,} of {index['members_total']:,} "
           f"members, {index['span'][0] if index['span'] else '?'}"
