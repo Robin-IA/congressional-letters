@@ -77,16 +77,26 @@ TIMEOUT = 300
 RETRIES = 3
 PER_HOST_CAP = 60_000
 
-# Years per request. Eight gives four windows over 1996-2026, which is enough
-# to let the expensive scans finish while keeping the request count to roughly
-# 2,100 across 539 hosts rather than 4,300.
-PARTITION_SPAN = 8
+# Years per request. Four, because that is the width actually measured against
+# the worst-known host: wicker.senate.gov returns 181 letters in 4-year windows
+# and 118-149 in one request, varying by attempt. Wider windows are untested
+# there, and the failure mode does not raise - a truncated response arrives as
+# HTTP 200 - so split-on-failure cannot rescue a span that is too wide. The
+# only safe span is one that has been shown to return everything.
+#
+# Eight windows per host over 1996-2026, but the pre-2004 ones are nearly
+# always empty and cost almost nothing: member websites barely existed.
+PARTITION_SPAN = 4
+
+# Index pages per request. 100 turns the worst host from 1,131 pages into
+# 12, each returning in about seven seconds.
+PAGE_SIZE = 100
 
 # Stamped into each cache entry. A cached host whose entry does not carry this
 # was enumerated by the old single-request path and cannot be trusted, so it
 # is re-queried rather than reused — which is what makes a re-harvest
 # resumable instead of all-or-nothing.
-CACHE_METHOD = "partitioned-v1"
+CACHE_METHOD = "paged-v1"
 
 # Captures that are not documents. A site serves its error page with the
 # requested document's path still in the URL, so in the index these look
@@ -174,8 +184,9 @@ def fetch(url: str, *, timeout: int = TIMEOUT) -> str:
 
 
 def cdx_rows(host: str, *, extra_filters: list[str] | None = None,
-             date_from: str | None = None,
-             date_to: str | None = None) -> list[dict]:
+             date_from: str | None = None, date_to: str | None = None,
+             page: int | None = None,
+             page_size: int | None = None) -> list[dict]:
     filters = ["statuscode:200", r"urlkey:.*letter.*",
                r"!urlkey:.*newsletter.*"] + (extra_filters or [])
     params = [("url", host), ("matchType", "domain"),
@@ -186,6 +197,10 @@ def cdx_rows(host: str, *, extra_filters: list[str] | None = None,
         params.append(("from", date_from))
     if date_to:
         params.append(("to", date_to))
+    if page is not None:
+        params.append(("page", page))
+    if page_size is not None:
+        params.append(("pageSize", page_size))
     query = urllib.parse.urlencode(
         params + [("filter", f) for f in filters])
 
@@ -208,6 +223,62 @@ def cdx_rows(host: str, *, extra_filters: list[str] | None = None,
         raise RuntimeError(
             f"hit the {PER_HOST_CAP:,}-row cap; this host needs partitioning")
     return out
+
+
+def cdx_rows_paged(host: str, page_size: int = PAGE_SIZE,
+                   pause: float = 0.4) -> list[dict]:
+    """Enumerate a host by walking CDX's own index pages.
+
+    This is the right axis, and date ranges were the wrong one. CDX is sorted
+    by URL key, and ``from``/``to`` filter *after* the scan, so narrowing the
+    dates does not narrow the work. Measured on cole.house.gov, a host with 54
+    letters::
+
+        1996-1999    38.2s   0 rows
+        2000-2003    31.0s   0 rows
+        2004-2007   228.6s   FAILED
+        2008-2011   197.4s   3 rows
+
+    Even an empty window costs 38 seconds, so eight of them cost eight times
+    one request and save nothing. Pages partition the index itself:
+    ``pageSize=100`` turns wicker.senate.gov into 12 pages of about 7 seconds
+    each — roughly 90 seconds for the host against 13 to 27 minutes by date.
+
+    ``showNumPages`` must be asked WITHOUT ``fl``; with a field list it answers
+    ``- - - - -``. It also ignores the filters and counts pages of the whole
+    host, which is fine: the filters still apply to each page, and a page with
+    no letters in it comes back empty and cheap.
+
+    Collapsing happens within a page, so the same URL can appear on two pages.
+    Results are keyed on the URL, which is also why this returns a DISTINCT
+    count rather than a sum — see the note in the module docstring.
+    """
+    count_query = urllib.parse.urlencode(
+        [("url", host), ("matchType", "domain"), ("collapse", "urlkey"),
+         ("showNumPages", "true"), ("pageSize", page_size)]
+        + [("filter", f) for f in ("statuscode:200", r"urlkey:.*letter.*",
+                                   r"!urlkey:.*newsletter.*")])
+    text = fetch(f"{CDX}?{count_query}", timeout=120).strip()
+    try:
+        pages = int(text)
+    except ValueError:
+        raise RuntimeError(f"showNumPages answered {text[:40]!r}") from None
+
+    seen: dict[str, dict] = {}
+    failures = 0
+    for page in range(pages):
+        try:
+            rows = cdx_rows(host, page=page, page_size=page_size)
+        except Exception:  # noqa: BLE001
+            failures += 1
+            if failures > max(3, pages // 4):
+                raise
+            continue
+        for row in rows:
+            seen.setdefault(row["url"], row)
+        if pause:
+            time.sleep(pause)
+    return list(seen.values())
 
 
 def cdx_rows_partitioned(host: str, start: int = 1996,
@@ -325,13 +396,13 @@ def harvest_host(member: dict, cache_dir: Path) -> dict:
     # cheap path is not available: the only trustworthy enumeration is one
     # where each request scans a narrow enough window to finish.
     try:
-        rows = cdx_rows_partitioned(host, span=PARTITION_SPAN)
+        rows = cdx_rows_paged(host)
     except Exception as exc:  # noqa: BLE001
         result["error"] = str(exc)[:160]
         cache_path.write_text(json.dumps(result), encoding="utf-8")
         return result
     result["method"] = CACHE_METHOD
-    result["span"] = PARTITION_SPAN
+    result["page_size"] = PAGE_SIZE
 
     result["rows"] = rows
     cache_path.write_text(json.dumps(result), encoding="utf-8")
