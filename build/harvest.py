@@ -491,7 +491,13 @@ def load_members(cache_dir: Path, refresh: bool = False) -> list[dict]:
         if not host:
             continue
         name = person.get("name", {})
+        years = [int(t["start"][:4]) for t in person.get("terms", [])
+                 if (t.get("start") or "")[:4].isdigit()]
         members.append({
+            # Everyone here is sitting, so the useful figure is when they
+            # arrived. The last term's recorded end is its SCHEDULED end and
+            # can be years in the future - Cantwell's reads 2031.
+            "since": min(years) if years else None,
             "bioguide": (person.get("id", {}) or {}).get("bioguide", ""),
             "name": name.get("official_full")
                     or f"{name.get('first', '')} {name.get('last', '')}".strip(),

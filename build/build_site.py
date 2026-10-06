@@ -235,6 +235,7 @@ def main() -> None:
             "state": member["state"],
             "district": member.get("district"),
             "party": member["party"],
+            "since": member.get("since"),
             "host": member["host"],
             "site": member["url"],
             "letters": len(letters),

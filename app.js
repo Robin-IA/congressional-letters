@@ -119,7 +119,7 @@ function memberBadges(m) {
       chamber(m)),
     el('span', { class: `badge ${partyClass(m.party)}` },
       (m.party || '').slice(0, 11)),
-    el('span', { class: 'chip' },
+    el('span', { class: 'state', title: stateName(m.state) },
       m.district != null && m.district !== '' ? `${m.state}-${m.district}` : m.state),
   ];
 }
@@ -400,7 +400,10 @@ function viewMembers() {
         el('span', { class: 'nm' }, m.name),
         el('span', { class: 'ct tab' }, num(m.letters))),
       el('span', { class: 'meta' }, memberBadges(m),
-        m.span ? el('span', {}, `${m.span[0]}–${m.span[1]}`) : null),
+        m.since
+          ? el('span', { class: 'since', title: 'Dates of service' },
+            `${m.since}–present`)
+          : null),
       m.top.length
         ? el('span', { class: 'with' }, `wrote to ${m.top.slice(0, 2).join(', ')}`)
         : el('span', { class: 'with faint' }, 'no recipients named in filenames'),
@@ -476,13 +479,21 @@ async function viewMember(id) {
           class: 'small', style: 'margin-left:auto',
         }, m.host)),
       el('div', { class: 'stats' },
-        el('div', {}, el('span', { class: 'v tab' }, num(rows.length)),
-          el('span', { class: 'k' }, 'Letters')),
+        el('div', {},
+          el('span', { class: 'v tab' }, num(rows.length)),
+          el('span', { class: 'k' },
+            years.length
+              ? (years[0] === years[years.length - 1]
+                ? `Letters, ${years[0]}`
+                : `Letters, ${years[0]}–${years[years.length - 1]}`)
+              : 'Letters')),
+        m.since
+          ? el('div', {},
+            el('span', { class: 'v tab' }, `${m.since}–present`),
+            el('span', { class: 'k' }, 'Dates of service'))
+          : null,
         el('div', {}, el('span', { class: 'v tab' }, num(recipients.length)),
           el('span', { class: 'k' }, 'Named recipients')),
-        el('div', {}, el('span', { class: 'v tab' },
-          years.length ? `${years[0]}–${years[years.length - 1]}` : '—'),
-          el('span', { class: 'k' }, 'Span')),
         leads || joins
           ? el('div', {}, el('span', { class: 'v tab' }, `${num(leads)} / ${num(joins)}`),
             el('span', { class: 'k' }, 'Led / joined'))

@@ -80,6 +80,12 @@ footer .wrap { padding: 0; }
 .b-sen { background: var(--sen); } .b-hou { background: var(--hou); }
 .b-dem { background: var(--dem); } .b-rep { background: var(--rep); } .b-ind { background: var(--ind); }
 .chip { display: inline-block; padding: .05rem .5rem; border: 1px solid var(--hair); border-radius: 2px; font-size: 1.1rem; color: var(--muted); background: var(--tint); }
+/* The state and the years are what people scan a card for, so they are not
+   grey furniture: the state reads as a plate, the years as a figure. */
+.state { display: inline-block; padding: .1rem .55rem; border-radius: 3px; font-size: 1.2rem;
+  font-weight: 700; letter-spacing: .06em; color: #fff; background: var(--bar); line-height: 1.45; }
+.since { font-size: 1.25rem; font-weight: 600; color: var(--ink); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.since .lab { font-weight: 400; color: var(--muted); font-size: 1.1rem; }
 .role { font-size: 1.1rem; padding: .05rem .45rem; border-radius: 2px; }
 .r-leads { background: #fbeadf; color: var(--lead); }
 .r-joins { background: #e4f1ea; color: var(--join); }
