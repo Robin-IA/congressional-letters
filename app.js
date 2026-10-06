@@ -871,9 +871,8 @@ function viewAbout() {
       the only copy left anywhere.`),
 
     el('h3', {}, 'Where the descriptions come from'),
-    el('p', {}, `Most of these letters are scans — a photo of the signed page, not text a
-      computer can read. So the short description you see next to each one isn’t taken
-      from inside the letter. It comes from the name of the file.`),
+    el('p', {}, `The short description next to each letter isn’t taken from inside the
+      letter. It comes from the name of the file.`),
     el('p', {}, `That works better than it sounds, because staffers name these files for
       people to read. A file called`),
     el('p', {}, el('code', {},
