@@ -124,6 +124,18 @@ DIGEST_PREFIX = re.compile(r"/[0-9a-f]{32}\.(?=.)", re.IGNORECASE)
 # Variant renderings of the same page.
 SUFFIX_NOISE = re.compile(r"/(embed|amp|print)/?$", re.IGNORECASE)
 
+# A press release ABOUT a letter is not the letter. These are news articles
+# announcing that a letter was sent — emmer.house.gov/media-center/
+# press-releases/emmer-foster-lead-bipartisan-letter-urging-expanded-substance-
+# abuse-treatment-coverage — and following one expecting a letter is a
+# mismatch.
+#
+# Only when the capture is HTML. 166 of the URLs under these paths are PDFs,
+# and a PDF filed under /press-releases/ is the letter attached to the
+# release rather than the release itself.
+PRESS_RELEASE = re.compile(
+    r"/(press-releases?|newsroom|media-center|news|posts|press_release)/", re.I)
+
 # A paginated list view, not a document.
 PAGINATION = re.compile(r"[?&]page=\d+", re.IGNORECASE)
 
@@ -379,6 +391,9 @@ def keep(row: dict) -> bool:
     if NOT_A_DOCUMENT.search(url) or TEMPLATE_URL.search(url):
         return False
     if PAGINATION.search(url):
+        return False
+    mime = (row.get("mimetype") or "").lower()
+    if mime.startswith("text/html") and PRESS_RELEASE.search(url.split("?", 1)[0]):
         return False
     if SECTION_INDEX.search(url.split("?", 1)[0]):
         return False

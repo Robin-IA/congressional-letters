@@ -78,6 +78,31 @@ class Keep(unittest.TestCase):
         self.assertFalse(keep(letter(
             "x.house.gov/media/letters?page=4", mimetype="text/html")))
 
+    def test_rejects_a_press_release_about_a_letter(self):
+        # A news article announcing that a letter was sent is not the letter.
+        for url in (
+            "emmer.house.gov/media-center/press-releases/emmer-foster-lead-"
+            "bipartisan-letter-urging-expanded-substance-abuse-treatment",
+            "cassidy.senate.gov/newsroom/press-releases/cassidy-urges-letter",
+            "x.senate.gov/news/press-releases/sends-letter-to-epa",
+        ):
+            self.assertFalse(keep(letter(url, mimetype="text/html")), url)
+
+    def test_keeps_a_pdf_filed_under_press_releases(self):
+        # 166 URLs under those paths are PDFs, and a PDF there is the letter
+        # attached to the release rather than the release itself.
+        self.assertTrue(keep(letter(
+            "x.house.gov/press-releases/letter-to-epa.pdf")))
+
+    def test_keeps_a_download_wrapper_and_a_letter_of_support(self):
+        # /download/ is how several offices publish the letter itself, and a
+        # letter of support — for a grant, a nomination — is a real letter.
+        self.assertTrue(keep(letter(
+            "warren.senate.gov/download/letter-to-hhs-on-vaccines",
+            mimetype="text/html")))
+        self.assertTrue(keep(letter(
+            "x.senate.gov/imo/media/doc/letter-of-support-for-grant.pdf")))
+
     def test_rejects_a_section_index_page(self):
         # /media-center/letters is the listing, not a letter. The depth rule
         # cannot catch these because the word IS the last segment.
