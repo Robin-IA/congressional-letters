@@ -214,11 +214,6 @@ function sparkline(counts, from, to) {
   return svg;
 }
 
-function roleTag(role) {
-  if (!role) return null;
-  const cls = role === 'leads' ? 'r-leads' : role === 'joins' ? 'r-joins' : '';
-  return el('span', { class: `role ${cls}` }, role);
-}
 
 // The letter itself. For most of these the scan IS the document — only 24% of
 // the PDFs carry a text layer — so the page is the primary thing to show.
@@ -276,7 +271,7 @@ function table(rows, opts = {}) {
           : el('span', { class: 'faint' }, 'not named')),
       el('td', { class: 'sub2' },
         get(row, 'subject') || el('span', { class: 'faint' }, '—'),
-        get(row, 'role') ? ' ' : null, roleTag(get(row, 'role'))),
+        ),
       el('td', {},
         el('a', {
           href: waybackUrl(row), target: '_blank', rel: 'noopener',
@@ -456,8 +451,6 @@ async function viewMember(id) {
   const recipients = tally(rows, 'recipient');
   const counts = yearsOf(rows);
   const years = [...counts.keys()].sort();
-  const leads = rows.filter(r => get(r, 'role') === 'leads').length;
-  const joins = rows.filter(r => get(r, 'role') === 'joins').length;
   const dated = rows.filter(r => get(r, 'precision') === 'day'
     || get(r, 'precision') === 'month').length;
 
@@ -494,10 +487,6 @@ async function viewMember(id) {
           : null,
         el('div', {}, el('span', { class: 'v tab' }, num(recipients.length)),
           el('span', { class: 'k' }, 'Named recipients')),
-        leads || joins
-          ? el('div', {}, el('span', { class: 'v tab' }, `${num(leads)} / ${num(joins)}`),
-            el('span', { class: 'k' }, 'Led / joined'))
-          : null,
       )),
     el('div', { class: 'cols' },
       el('div', {},
