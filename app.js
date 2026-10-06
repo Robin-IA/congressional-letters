@@ -270,7 +270,7 @@ function table(rows, opts = {}) {
         el('th', {}, 'Date'),
         opts.showMember ? el('th', {}, 'Member') : null,
         el('th', {}, 'Sent to'),
-        el('th', {}, 'What it was about'),
+        el('th', {}, 'Scope of letter'),
         el('th', {}, ''))),
       body));
   if (rows.length > limit) {
