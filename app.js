@@ -28,6 +28,8 @@ const ROWS = 150;      // table rows before "show more"
 let INDEX, MEMBERS;
 let byId = new Map();
 const memberCache = new Map();
+let SEARCH = null;            // the whole-corpus index, fetched on first search
+let searchLoading = null;
 let shown = 0;
 
 // ------------------------------------------------------------------ helpers
@@ -125,6 +127,20 @@ function link(paramsObj, cls, ...kids) {
       go(next);
     },
   }, ...kids);
+}
+
+// The corpus-wide search index, fetched once. Before this existed, search
+// could only see members the visitor had already opened — so from a cold load
+// it found nothing, which is not a search.
+async function loadSearch() {
+  if (SEARCH) return SEARCH;
+  if (!searchLoading) {
+    searchLoading = fetch(INDEX.search_url || 'payload/search.json')
+      .then(r => (r.ok ? r.json() : Promise.reject(new Error(`HTTP ${r.status}`))))
+      .then(d => { SEARCH = d; return d; })
+      .catch(err => { SEARCH = { failed: String(err.message || err) }; return SEARCH; });
+  }
+  return searchLoading;
 }
 
 async function lettersOf(bioguide) {
@@ -358,13 +374,12 @@ function viewMembers() {
     el('p', { class: 'sub' },
       el('b', {}, num(INDEX.letters)), ' letters published on ',
       el('b', {}, num(INDEX.members_with_letters)),
-      ' members of Congress, saved from their own websites by the Wayback Machine, ',
+      ' members of Congress, archived from their own websites by the Wayback Machine, ',
       `${(INDEX.span || [])[0]} to ${(INDEX.span || [])[1]}. `,
-      'Pick a name to see who they wrote to and what they asked for.'),
+      'Select a Congressperson to see who they wrote to and about what.'),
     el('p', { class: 'note' },
-      'This is what the Wayback Machine happened to save — not every letter '
-      + 'Congress has written. A member with few letters here may simply have had '
-      + 'their website visited less often by the archive’s crawlers.'),
+      'This is what the Wayback Machine has archived — not every letter '
+      + 'Congress has written.'),
     controls, grid);
 
   if (list.length > limit) {
@@ -447,7 +462,7 @@ async function viewMember(id) {
           el('span', { class: 'count tab' },
             `${num(dated)} of ${num(rows.length)} have an exact date`)),
         el('p', { class: 'note' },
-          'These are the letters the Wayback Machine saved from '
+          'These are the letters the Wayback Machine has archived from '
           + `${m.host} — not necessarily everything this office published.`),
         asList ? table(rows, { member: m }) : wall(rows)),
       el('div', {},
@@ -584,10 +599,9 @@ function viewTimeline() {
       'Click any year to read what was sent that year. ',
       el('span', { class: 'muted' },
         'Keep in mind this chart shows when letters were '),
-      el('span', { class: 'muted' }, el('em', {}, 'saved')),
+      el('span', { class: 'muted' }, el('em', {}, 'archived')),
       el('span', { class: 'muted' },
-        ', not everything Congress sent — a quiet year here may just mean the '
-        + 'Wayback Machine visited those websites less often.')),
+        ', not everything Congress sent.')),
     el('div', { class: 'panel' }, bars,
       el('div', { class: 'axis' },
         ...[from, Math.round((from + to) / 2), to].map((y, i) => el('span', {
@@ -649,55 +663,147 @@ async function viewYear(yearText) {
 
 async function viewSearch(query) {
   const needle = (query || '').trim().toLowerCase();
-  if (!needle) return el('div', { class: 'empty' }, 'Type something to search for.');
+  const runSearch = text => {
+    const next = new URLSearchParams();
+    next.set('view', 'search');
+    next.set('q', text);
+    shown = 0;
+    go(next);
+  };
 
-  // Members whose name or state matches, plus a scan of the loaded members'
-  // letters. The index does not carry every subject line, so this searches
-  // what has been opened plus the recipient vocabulary.
-  const nameHits = MEMBERS.filter(m =>
-    m.name.toLowerCase().includes(needle));
+  const box = el('div', { class: 'controls' },
+    el('input', {
+      type: 'search', value: query || '', id: 'bigsearch',
+      placeholder: 'Search letters — a topic, an agency, a member’s name',
+      oninput: e => {
+        const v = e.target.value;
+        clearTimeout(window.__st);
+        window.__st = setTimeout(() => {
+          const next = params();
+          if (v) next.set('q', v); else next.delete('q');
+          history.replaceState({}, '', `?${next}`);
+          render().then(() => {
+            const b = $('#bigsearch');
+            if (b) { b.focus(); b.setSelectionRange(b.value.length, b.value.length); }
+          });
+        }, 220);
+      },
+    }));
+
+  if (!needle) {
+    const picks = INDEX.suggestions || [];
+    return el('div', {}, box,
+      el('p', { class: 'hero' }, 'What are you looking for?'),
+      el('p', { class: 'sub' },
+        'Search ', el('b', {}, num(INDEX.letters)),
+        ' letters by topic, by the agency they were sent to, or by who wrote them.'),
+      picks.length
+        ? el('div', { class: 'panel' },
+          el('h3', {}, 'Try one of these'),
+          el('div', { class: 'controls' },
+            ...picks.map(t => el('button', {
+              class: 'chip', style: 'cursor:pointer;font-size:1.3rem;padding:.4rem .9rem',
+              onclick: () => runSearch(t),
+            }, t))))
+        : null,
+      el('div', { class: 'panel' },
+        el('h3', {}, 'Or browse instead'),
+        el('p', { class: 'small' },
+          link({ view: 'members' }, null, 'By member of Congress'), ' · ',
+          link({ view: 'recipients' }, null, 'By who the letters went to'), ' · ',
+          link({ view: 'timeline' }, null, 'By year'))));
+  }
+
+  const nameHits = MEMBERS.filter(m => m.name.toLowerCase().includes(needle));
   const recipientHits = (INDEX.recipients || [])
     .filter(([name]) => name.toLowerCase().includes(needle));
 
-  const scanned = [...memberCache.keys()];
+  const loaded = await loadSearch();
+  const data = loaded && !loaded.failed ? loaded : null;
+  const failed = loaded && loaded.failed;
   const letterHits = [];
-  for (const id of scanned) {
-    for (const row of memberCache.get(id) || []) {
-      const haystack = `${get(row, 'subject') || ''} ${get(row, 'recipient') || ''} `
-        + `${get(row, 'key')}`;
-      if (haystack.toLowerCase().includes(needle)) letterHits.push([id, row]);
+  if (data) {
+    for (const [mIdx, rIdx, year, , subject, exact] of data.rows) {
+      const recipient = rIdx >= 0 ? data.recipients[rIdx] : '';
+      if (subject.toLowerCase().includes(needle)
+          || recipient.toLowerCase().includes(needle)) {
+        letterHits.push([data.members[mIdx], recipient, year, subject, exact]);
+        if (letterHits.length >= 4000) break;
+      }
     }
   }
+  letterHits.sort((a, b) => (b[2] || 0) - (a[2] || 0) || (b[4] - a[4]));
 
-  return el('div', {},
+  const limit = shown || 60;
+  const table = el('table', { class: 'letters' },
+    el('thead', {}, el('tr', {},
+      el('th', {}, 'Year'), el('th', {}, 'Member'),
+      el('th', {}, 'Sent to'), el('th', {}, 'What it was about'))),
+    el('tbody', {}, ...letterHits.slice(0, limit).map(([mid, recipient, year, subject, exact]) => {
+      const m = byId.get(mid);
+      return el('tr', {},
+        el('td', { class: 'wh' },
+          year ? (exact ? String(year) : `by ${year}`) : '—'),
+        el('td', { class: 'who' }, m ? link({ member: mid }, null, m.name) : '—'),
+        el('td', { class: 'who' }, recipient
+          ? link({ to: recipient }, null, recipient)
+          : el('span', { class: 'faint' }, 'not named')),
+        el('td', { class: 'sub2' }, subject || el('span', { class: 'faint' }, '—')));
+    })));
+
+  const out = el('div', {}, box,
     el('p', { class: 'hero' }, `“${query}”`),
     el('p', { class: 'sub' },
-      el('b', {}, num(nameHits.length)), ' members, ',
-      el('b', {}, num(recipientHits.length)), ' recipients, and ',
-      el('b', {}, num(letterHits.length)),
-      ' letters. ',
+      data
+        ? el('span', {}, el('b', {}, num(letterHits.length)), ' letters')
+        : failed
+          ? el('span', { class: 'red' }, 'Letter search is unavailable right now')
+          : el('span', {}, 'Searching…'),
+      nameHits.length ? el('span', {}, ', ', el('b', {}, num(nameHits.length)),
+        nameHits.length === 1 ? ' member' : ' members') : null,
+      recipientHits.length ? el('span', {}, ', ', el('b', {}, num(recipientHits.length)),
+        ' written to') : null,
+      '. ',
       el('span', { class: 'faint' },
-        'This searches file names and descriptions, not the words inside the letters — '
+        'This searches the short descriptions, not the words inside the letters — '
         + 'most of them are scans.')),
     nameHits.length
       ? el('div', { class: 'panel' }, el('h3', {}, 'Members'),
-        el('div', { class: 'grid' }, ...nameHits.slice(0, 12).map(m =>
+        el('div', { class: 'grid' }, ...nameHits.slice(0, 9).map(m =>
           link({ member: m.id }, 'card',
             el('span', { class: 'top' }, el('span', { class: 'nm' }, m.name),
               el('span', { class: 'ct tab' }, num(m.letters))),
             el('span', { class: 'meta' }, memberBadges(m))))))
       : null,
     recipientHits.length
-      ? el('div', { class: 'panel' }, el('h3', {}, 'Recipients'),
-        rankList(recipientHits, name => link({ to: name }, null, name), 12))
+      ? el('div', { class: 'panel' }, el('h3', {}, 'Sent to'),
+        rankList(recipientHits, name => link({ to: name }, null, name), 8))
       : null,
     letterHits.length
-      ? el('div', { class: 'panel' }, el('h3', {}, 'Letters'),
-        el('div', { class: 'wall' }, ...letterHits.slice(0, 36).map(([, row]) => shot(row))))
-      : null,
-    !nameHits.length && !recipientHits.length && !letterHits.length
-      ? el('div', { class: 'empty' }, 'Nothing matched.')
+      ? el('div', { class: 'panel' }, el('h3', {}, 'Letters'), table)
       : null);
+
+  if (letterHits.length > limit) {
+    out.append(el('button', {
+      class: 'more',
+      onclick: () => { shown = limit + 120; render(); },
+    }, `Show more — ${num(letterHits.length - limit)} more letters`));
+  }
+  if (failed) {
+    out.append(el('p', { class: 'note' },
+      'The search index could not be loaded, so only member and recipient names '
+      + 'were searched. Browsing by '
+      , link({ view: 'members' }, null, 'member'), ' or '
+      , link({ view: 'recipients' }, null, 'recipient'), ' still works.'));
+  }
+  if (data && !letterHits.length && !nameHits.length && !recipientHits.length) {
+    out.append(el('div', { class: 'empty' },
+      el('p', {}, `Nothing matched “${query}”.`),
+      el('p', { class: 'small' },
+        'Try a broader word, or ',
+        link({ view: 'search' }, null, 'start from a suggestion'), '.')));
+  }
+  return out;
 }
 
 function viewAbout() {
@@ -718,12 +824,12 @@ function viewAbout() {
       ${num(INDEX.members_with_letters)} members, going back to ${(INDEX.span || [])[0]}.
       You can browse by who wrote them, by who they were sent to, or by year.`),
 
-    el('h3', {}, 'Why it matters that these are archived'),
+    el('h3', {}, 'Why the archive matters here'),
     el('p', {}, `When a member of Congress leaves office, their website doesn’t stay up.
       The next person to hold the seat gets the same web address, and everything that was
       there before is gone.`),
     el('p', {}, `Two examples we hit while building this: portman.senate.gov and
-      braun.senate.gov. Neither loads any more. But the Wayback Machine saved copies, and
+      braun.senate.gov. Neither loads any more. But the Wayback Machine archived them, and
       that’s where these letters come from — so for a lot of this, the archive is
       the only copy left anywhere.`),
 
@@ -754,11 +860,8 @@ function viewAbout() {
       letter existed by then. It may be older.`),
 
     el('h3', {}, 'What’s missing'),
-    el('p', {}, `Only what was saved. The Wayback Machine visits some websites far more
-      often than others, so this is a sample of what Congress published, not a complete
-      record of what Congress sent. If a member has only a handful of letters here, that
-      may say more about how often the archive crawled their site than about how much
-      they wrote.`),
+    el('p', {}, `Only what was archived. This is what the Wayback Machine holds of what
+      Congress published — not a complete record of what Congress sent.`),
     el('p', {}, `Only people currently serving. Letters from members who have already left
       office are in the archive too, and they’re the ones most at risk of being
       forgotten — but matching former members to the websites they used to have is a
@@ -790,7 +893,7 @@ function viewAbout() {
       el('tr', {}, el('td', {}, 'Last updated'), el('td', { class: 'n' }, INDEX.built)))),
 
     el('h3', {}, 'Credits'),
-    el('p', {}, 'Built at the Internet Archive from the Wayback Machine’s copies of ',
+    el('p', {}, 'Built at the Internet Archive from the Wayback Machine’s archive of ',
       'congressional websites. The letters themselves are public records; every one links ',
       'back to the archived original so you can read it yourself.'),
   );

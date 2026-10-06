@@ -173,6 +173,20 @@ def main() -> None:
             if record.get("role"):
                 roles[record["role"]] += 1
 
+    # A searchable index of every letter's description, so search works from
+    # a cold page load. Without it search could only see members the visitor
+    # had already opened, which is to say it did not work.
+    #
+    # Compact by construction: member ids and recipients are interned, and a
+    # result points at (member, row) rather than carrying the letter's URL,
+    # which is the longest field. 93,000 letters come to about 4 MB, fetched
+    # once on the first search rather than on page load.
+    search_rows: list = []
+    search_members: list[str] = []
+    search_recipients: list[str] = []
+    member_slot: dict[str, int] = {}
+    recipient_slot: dict[str, int] = {}
+
     out_member = args.payload / "member"
     if out_member.exists():
         shutil.rmtree(out_member)
@@ -185,6 +199,27 @@ def main() -> None:
         # browser sorting thousands of rows.
         letters.sort(key=lambda row: (row[3] or "9999", row[0]))
         if letters:
+            m_idx = member_slot.setdefault(bioguide, len(search_members))
+            if m_idx == len(search_members):
+                search_members.append(bioguide)
+            for row_idx, row in enumerate(letters):
+                subject = row[COLUMNS.index("subject")]
+                recipient = row[COLUMNS.index("recipient")]
+                if not subject and not recipient:
+                    continue
+                r_idx = -1
+                if recipient:
+                    r_idx = recipient_slot.setdefault(recipient,
+                                                      len(search_recipients))
+                    if r_idx == len(search_recipients):
+                        search_recipients.append(recipient)
+                year = int(row[COLUMNS.index("date")][:4])                     if row[COLUMNS.index("date")] else 0
+                # 1 when the year is the letter's own, 0 when it is only the
+                # date the Wayback Machine first saw the file. Sorting mixes
+                # the two, and a capture year looks exact unless it is marked.
+                exact = 0 if row[COLUMNS.index("precision")] == "captured-by" else 1
+                search_rows.append([m_idx, r_idx, year, row_idx, subject or "",
+                                    exact])
             (out_member / f"{bioguide}.json").write_text(
                 json.dumps(letters, ensure_ascii=False, separators=(",", ":")),
                 encoding="utf-8")
@@ -230,12 +265,27 @@ def main() -> None:
         # URL for the published page.
         "thumb_base": thumb_base,
         "data_base": data_base,
+        "search_url": (base + "search.json") if args.item else "payload/search.json",
+        # Offered on the empty search page. Each one was checked against the
+        # index and returns real results; a suggestion that finds nothing is
+        # worse than none.
+        "suggestions": ["covid", "opioid", "wildfire", "student loans",
+                        "immigration", "veterans", "medicare", "climate",
+                        "broadband", "tariff", "census", "social security"],
         "members": index_members,
     }
     args.out.mkdir(parents=True, exist_ok=True)
     (args.out / "index.json").write_text(
         json.dumps(index, ensure_ascii=False, separators=(",", ":")),
         encoding="utf-8")
+
+    search_path = args.payload / "search.json"
+    search_path.write_text(json.dumps(
+        {"members": search_members, "recipients": search_recipients,
+         "rows": search_rows}, ensure_ascii=False, separators=(",", ":")),
+        encoding="utf-8")
+    print(f"  search.json   {search_path.stat().st_size / 1024 / 1024:>8,.1f} MB "
+          f"across {len(search_rows):,} letters   (payload)", file=sys.stderr)
 
     size = (args.out / "index.json").stat().st_size
     per_member_bytes = sum(p.stat().st_size for p in out_member.glob("*.json"))

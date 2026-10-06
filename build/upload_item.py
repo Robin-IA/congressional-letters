@@ -53,15 +53,20 @@ METADATA = {
 
 
 def plan(payload: Path) -> list[tuple[str, Path]]:
-    """(remote name, local path) for everything that should be on the item."""
+    """(remote name, local path) for everything that should be on the item.
+
+    Walks the whole payload rather than a list of known subdirectories. The
+    first version named "member" and "thumbs" explicitly, so when search.json
+    was added beside them the uploader reported "0 to upload" and the live
+    site searched against a file that was never there.
+    """
     files: list[tuple[str, Path]] = []
-    for sub in ("member", "thumbs"):
-        folder = payload / sub
-        if not folder.exists():
+    for path in sorted(payload.rglob("*")):
+        if not path.is_file() or path.name.startswith("."):
             continue
-        for path in sorted(folder.iterdir()):
-            if path.is_file() and not path.name.startswith("."):
-                files.append((f"{sub}/{path.name}", path))
+        if path.suffix in (".part", ".tmp"):
+            continue
+        files.append((path.relative_to(payload).as_posix(), path))
     return files
 
 
