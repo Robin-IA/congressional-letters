@@ -766,7 +766,7 @@ async function viewSearch(query) {
   const table = el('table', { class: 'letters' },
     el('thead', {}, el('tr', {},
       el('th', {}, 'Year'), el('th', {}, 'Member'),
-      el('th', {}, 'Sent to'), el('th', {}, 'What it was about'), el('th', {}, ''))),
+      el('th', {}, 'Sent to'), el('th', {}, 'Scope of letter'), el('th', {}, ''))),
     el('tbody', {}, ...visible.map(([mid, recipient, year, subject, exact, rowIdx]) => {
       const m = byId.get(mid);
       const row = letterOf(mid, rowIdx);
