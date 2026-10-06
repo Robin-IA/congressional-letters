@@ -79,6 +79,8 @@ def main() -> None:
                         help="per-member files and thumbnails, uploaded separately")
     parser.add_argument("--pdf-dates", type=Path,
                         default=root / "data" / "pdf-dates.jsonl")
+    parser.add_argument("--force", action="store_true",
+                        help="build even if the corpus shrank by more than a tenth")
     parser.add_argument("--item", default="",
                         help="archive.org item holding the payload; sets the "
                              "base URLs the published page fetches from")
@@ -274,6 +276,27 @@ def main() -> None:
                         "broadband", "tariff", "census", "social security"],
         "members": index_members,
     }
+    # REFUSE TO SHRINK WITHOUT BEING TOLD TO. A build is normally an
+    # improvement on the last one; a build that drops a tenth of the corpus is
+    # usually a broken harvest being baked into the site. That happened once
+    # already here - a contaminated cache produced 78,100 letters against
+    # 93,123, and the next build_site run overwrote the published index with
+    # it before anyone noticed.
+    previous_path = args.out / "index.json"
+    if previous_path.exists() and not args.force:
+        try:
+            previous = json.loads(previous_path.read_text(encoding="utf-8"))
+        except Exception:  # noqa: BLE001
+            previous = {}
+        was = previous.get("letters", 0)
+        if was and total < was * 0.9:
+            raise SystemExit(
+                "refusing to shrink: this build has "
+                f"{total:,} letters against {was:,} already published "
+                f"({(total - was) / was * 100:+.0f}%). "
+                "If the harvest is genuinely smaller, pass --force. "
+                "If it is not, fix the harvest before rebuilding.")
+
     args.out.mkdir(parents=True, exist_ok=True)
     (args.out / "index.json").write_text(
         json.dumps(index, ensure_ascii=False, separators=(",", ":")),

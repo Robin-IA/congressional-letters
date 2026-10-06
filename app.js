@@ -378,7 +378,7 @@ function viewMembers() {
   }
 
   const out = el('div', {},
-    el('p', { class: 'hero' }, 'What has your member of Congress been asking for?'),
+    el('p', { class: 'hero' }, 'Letters from Congress'),
     el('p', { class: 'sub' },
       el('b', {}, num(INDEX.letters)), ' letters published on ',
       el('b', {}, num(INDEX.members_with_letters)),
@@ -734,11 +734,11 @@ async function viewSearch(query) {
   const failed = loaded && loaded.failed;
   const letterHits = [];
   if (data) {
-    for (const [mIdx, rIdx, year, , subject, exact] of data.rows) {
+    for (const [mIdx, rIdx, year, rowIdx, subject, exact] of data.rows) {
       const recipient = rIdx >= 0 ? data.recipients[rIdx] : '';
       if (subject.toLowerCase().includes(needle)
           || recipient.toLowerCase().includes(needle)) {
-        letterHits.push([data.members[mIdx], recipient, year, subject, exact]);
+        letterHits.push([data.members[mIdx], recipient, year, subject, exact, rowIdx]);
         if (letterHits.length >= 4000) break;
       }
     }
@@ -746,12 +746,31 @@ async function viewSearch(query) {
   letterHits.sort((a, b) => (b[2] || 0) - (a[2] || 0) || (b[4] - a[4]));
 
   const limit = shown || 60;
+  const visible = letterHits.slice(0, limit);
+
+  // The index stores a pointer rather than the letter's URL, which is by far
+  // its longest field. Resolving it means loading the member files for the
+  // results actually on screen — a few dozen small files, already cached if
+  // the visitor has opened any of those members.
+  const needed = [...new Set(visible.map(h => h[0]))];
+  const files = new Map();
+  await Promise.all(needed.map(async id => {
+    files.set(id, await lettersOf(id).catch(() => []));
+  }));
+
+  const letterOf = (mid, rowIdx) => {
+    const rows = files.get(mid);
+    return rows && rows[rowIdx] ? rows[rowIdx] : null;
+  };
+
   const table = el('table', { class: 'letters' },
     el('thead', {}, el('tr', {},
       el('th', {}, 'Year'), el('th', {}, 'Member'),
-      el('th', {}, 'Sent to'), el('th', {}, 'What it was about'))),
-    el('tbody', {}, ...letterHits.slice(0, limit).map(([mid, recipient, year, subject, exact]) => {
+      el('th', {}, 'Sent to'), el('th', {}, 'What it was about'), el('th', {}, ''))),
+    el('tbody', {}, ...visible.map(([mid, recipient, year, subject, exact, rowIdx]) => {
       const m = byId.get(mid);
+      const row = letterOf(mid, rowIdx);
+      const href = row ? waybackUrl(row) : null;
       return el('tr', {},
         el('td', { class: 'wh' },
           year ? (exact ? String(year) : `by ${year}`) : '—'),
@@ -759,7 +778,15 @@ async function viewSearch(query) {
         el('td', { class: 'who' }, recipient
           ? link({ to: recipient }, null, recipient)
           : el('span', { class: 'faint' }, 'not named')),
-        el('td', { class: 'sub2' }, subject || el('span', { class: 'faint' }, '—')));
+        el('td', { class: 'sub2' },
+          href
+            ? el('a', { href, target: '_blank', rel: 'noopener' },
+              subject || 'Open this letter')
+            : (subject || el('span', { class: 'faint' }, '—'))),
+        el('td', {}, href
+          ? el('a', { href, target: '_blank', rel: 'noopener', class: 'small' },
+            row && get(row, 'kind') === 'pdf' ? 'Read it' : 'Open')
+          : null));
     })));
 
   const out = el('div', {}, box,
