@@ -803,8 +803,7 @@ async function viewSearch(query) {
         ' written to') : null,
       '. ',
       el('span', { class: 'faint' },
-        'This searches the short descriptions, not the words inside the letters — '
-        + 'most of them are scans.')),
+        'This searches letter descriptions, not the words within the letters.')),
     nameHits.length
       ? el('div', { class: 'panel' }, el('h3', {}, 'Members'),
         el('div', { class: 'grid' }, ...nameHits.slice(0, 9).map(m =>
