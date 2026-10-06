@@ -84,6 +84,26 @@ function when(row, long = false) {
   return long ? `in the archive by ${Number(d)} ${month} ${y}` : `by ${month} ${y}`;
 }
 
+// Members carry a two-letter state code, so a filter matching only that found
+// nothing for "california" — the obvious thing to type. Matching both.
+const STATE_NAMES = {
+  AL: 'Alabama', AK: 'Alaska', AZ: 'Arizona', AR: 'Arkansas', CA: 'California',
+  CO: 'Colorado', CT: 'Connecticut', DE: 'Delaware', FL: 'Florida', GA: 'Georgia',
+  HI: 'Hawaii', ID: 'Idaho', IL: 'Illinois', IN: 'Indiana', IA: 'Iowa',
+  KS: 'Kansas', KY: 'Kentucky', LA: 'Louisiana', ME: 'Maine', MD: 'Maryland',
+  MA: 'Massachusetts', MI: 'Michigan', MN: 'Minnesota', MS: 'Mississippi',
+  MO: 'Missouri', MT: 'Montana', NE: 'Nebraska', NV: 'Nevada',
+  NH: 'New Hampshire', NJ: 'New Jersey', NM: 'New Mexico', NY: 'New York',
+  NC: 'North Carolina', ND: 'North Dakota', OH: 'Ohio', OK: 'Oklahoma',
+  OR: 'Oregon', PA: 'Pennsylvania', RI: 'Rhode Island', SC: 'South Carolina',
+  SD: 'South Dakota', TN: 'Tennessee', TX: 'Texas', UT: 'Utah', VT: 'Vermont',
+  VA: 'Virginia', WA: 'Washington', WV: 'West Virginia', WI: 'Wisconsin',
+  WY: 'Wyoming', DC: 'District of Columbia', PR: 'Puerto Rico', GU: 'Guam',
+  VI: 'Virgin Islands', AS: 'American Samoa', MP: 'Northern Mariana Islands',
+};
+
+const stateName = code => STATE_NAMES[(code || '').toUpperCase()] || code || '';
+
 function chamber(m) { return m.chamber === 'sen' ? 'Senate' : 'House'; }
 
 function partyClass(party) {
@@ -306,8 +326,18 @@ function viewMembers() {
   const sort = p.get('sort') || 'letters';
 
   let list = MEMBERS.filter(m => {
-    if (q && !m.name.toLowerCase().includes(q)
-        && !(m.state || '').toLowerCase().includes(q)) return false;
+    if (q) {
+      // The state CODE has to match exactly. As a substring, "ca" also finds
+      // Cassidy and McCarthy — 108 members for a query meaning California's
+      // 54. The state NAME matches loosely, which is what makes the written
+      // abbreviations work without listing them: Calif, Tenn, Penn, Mass and
+      // Wash are all prefixes of the state they stand for.
+      const code = (m.state || '').toLowerCase();
+      const hit = m.name.toLowerCase().includes(q)
+        || code === q
+        || stateName(m.state).toLowerCase().includes(q);
+      if (!hit) return false;
+    }
     if (ch && m.chamber !== ch) return false;
     if (party && !(m.party || '').startsWith(party)) return false;
     return true;
@@ -326,7 +356,7 @@ function viewMembers() {
   const controls = el('div', { class: 'controls' },
     el('input', {
       type: 'search', value: p.get('q') || '',
-      placeholder: 'Filter by name or state',
+      placeholder: 'Name or state — California, Calif, CA, or a member’s name',
       oninput: e => {
         const next = params();
         if (e.target.value) next.set('q', e.target.value); else next.delete('q');
