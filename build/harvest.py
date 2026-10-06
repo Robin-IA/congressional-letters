@@ -97,7 +97,7 @@ PAGE_SIZE = 100
 # was enumerated by the old single-request path and cannot be trusted, so it
 # is re-queried rather than reused — which is what makes a re-harvest
 # resumable instead of all-or-nothing.
-CACHE_METHOD = "paged-v1"
+CACHE_METHOD = "paged-v2"
 
 # Captures that are not documents. A site serves its error page with the
 # requested document's path still in the URL, so in the index these look
@@ -266,15 +266,30 @@ def cdx_rows_paged(host: str, page_size: int = PAGE_SIZE,
         raise RuntimeError(f"showNumPages answered {text[:40]!r}") from None
 
     seen: dict[str, dict] = {}
-    failures = 0
     for page in range(pages):
-        try:
-            rows = cdx_rows(host, page=page, page_size=page_size)
-        except Exception:  # noqa: BLE001
-            failures += 1
-            if failures > max(3, pages // 4):
-                raise
-            continue
+        # A PAGE THAT FAILS FAILS THE HOST. An earlier version tolerated up to
+        # a quarter of the pages failing and still wrote the host to cache as
+        # a success, which under throttling turned a rate limit into silent
+        # data loss: www.warren.senate.gov cached 1,333 rows against the 6,427
+        # it actually has, and www.blumenthal.senate.gov cached zero, both
+        # recorded as complete with no error.
+        #
+        # That is the exact fault this whole enumeration exists to avoid, so
+        # the host is retried a few times and then given up on loudly. A host
+        # marked failed is re-queried on the next run; a host silently short
+        # is wrong for ever.
+        last: Exception | None = None
+        for attempt in range(3):
+            try:
+                rows = cdx_rows(host, page=page, page_size=page_size)
+                break
+            except Exception as exc:  # noqa: BLE001
+                last = exc
+                time.sleep(min(45, 5 * (2 ** attempt)))
+        else:
+            raise RuntimeError(
+                f"page {page} of {pages} failed after 3 attempts: "
+                f"{type(last).__name__}") from last
         for row in rows:
             seen.setdefault(row["url"], row)
         if pause:
