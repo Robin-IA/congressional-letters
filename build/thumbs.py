@@ -172,7 +172,12 @@ def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--parsed", type=Path,
                         default=root / "data" / "letters-parsed.jsonl")
-    parser.add_argument("--thumbs", type=Path, default=root / "site" / "thumbs")
+    # payload/, not site/. The ETD restructure moved everything the browser
+    # fetches into payload/ and deleted site/, but this default was left
+    # behind — so the renderer went on writing to a directory nothing reads
+    # and the thumbnail count sat still while it worked.
+    parser.add_argument("--thumbs", type=Path,
+                        default=root / "payload" / "thumbs")
     parser.add_argument("--workers", type=int, default=2,
                         help="keep this low; see the module docstring")
     parser.add_argument("--pause", type=float, default=0.75,
