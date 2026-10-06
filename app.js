@@ -353,6 +353,14 @@ function viewMembers() {
       `${num(list.length)} of ${num(MEMBERS.length)} members`),
   );
 
+  // Say what the order means. The count is how many letters we ARCHIVED, not
+  // how many a member wrote, and an unlabelled ranking reads as the latter.
+  const orderNote = {
+    letters: 'Ordered by how many letters have been archived.',
+    name: 'In alphabetical order by surname.',
+    state: 'Grouped by state.',
+  }[sort];
+
   const limit = shown || CARDS;
   const grid = el('div', { class: 'grid' });
   const [from, to] = INDEX.span || [2000, 2026];
@@ -380,7 +388,10 @@ function viewMembers() {
     el('p', { class: 'note' },
       'This is what the Wayback Machine has archived — not every letter '
       + 'Congress has written.'),
-    controls, grid);
+    controls,
+    orderNote ? el('p', { class: 'small muted', style: 'margin:-.6rem 0 1.2rem' },
+      orderNote) : null,
+    grid);
 
   if (list.length > limit) {
     out.append(el('button', {
