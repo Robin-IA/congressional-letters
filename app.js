@@ -202,7 +202,7 @@ function shot(row) {
       src
         ? el('img', { src, loading: 'lazy', alt: '', width: 170, height: 220 })
         : el('span', { class: 'none' },
-          get(row, 'kind') === 'pdf' ? 'PDF — not yet rendered' : 'Press release')),
+          get(row, 'kind') === 'pdf' ? 'Preview coming soon' : 'Press release')),
     el('span', { class: 'cap' }, caption),
     el('span', { class: 'when' }, when(row),
       recipient && subject ? ` · ${recipient}` : ''),
@@ -253,8 +253,8 @@ function table(rows, opts = {}) {
       el('thead', {}, el('tr', {},
         el('th', {}, 'Date'),
         opts.showMember ? el('th', {}, 'Member') : null,
-        el('th', {}, 'Written to'),
-        el('th', {}, 'Subject, from the filename'),
+        el('th', {}, 'Sent to'),
+        el('th', {}, 'What it was about'),
         el('th', {}, ''))),
       body));
   if (rows.length > limit) {
@@ -354,13 +354,17 @@ function viewMembers() {
   }
 
   const out = el('div', {},
-    el('p', { class: 'hero' }, 'Letters from Congress.'),
+    el('p', { class: 'hero' }, 'What has your member of Congress been asking for?'),
     el('p', { class: 'sub' },
       el('b', {}, num(INDEX.letters)), ' letters published on ',
       el('b', {}, num(INDEX.members_with_letters)),
-      ' members’ own websites and preserved by the Wayback Machine, ',
-      `${(INDEX.span || [])[0]}–${(INDEX.span || [])[1]}. `,
-      'Member sites are wiped when a seat changes hands, so for many of these the archive is the only copy left.'),
+      ' members of Congress, saved from their own websites by the Wayback Machine, ',
+      `${(INDEX.span || [])[0]} to ${(INDEX.span || [])[1]}. `,
+      'Pick a name to see who they wrote to and what they asked for.'),
+    el('p', { class: 'note' },
+      'This is what the Wayback Machine happened to save — not every letter '
+      + 'Congress has written. A member with few letters here may simply have had '
+      + 'their website visited less often by the archive’s crawlers.'),
     controls, grid);
 
   if (list.length > limit) {
@@ -441,15 +445,19 @@ async function viewMember(id) {
               onclick: () => switchTo('list'),
             }, 'As a list')),
           el('span', { class: 'count tab' },
-            `${num(dated)} of ${num(rows.length)} carry a date in the filename`)),
+            `${num(dated)} of ${num(rows.length)} have an exact date`)),
+        el('p', { class: 'note' },
+          'These are the letters the Wayback Machine saved from '
+          + `${m.host} — not necessarily everything this office published.`),
         asList ? table(rows, { member: m }) : wall(rows)),
       el('div', {},
         el('div', { class: 'panel' },
-          el('h3', {}, 'Wrote to'),
+          el('h3', {}, 'Who they wrote to'),
           recipients.length
             ? rankList(recipients, name => link({ to: name }, null, name))
             : el('p', { class: 'faint small' },
-              'No recipients are named in this site’s filenames.')),
+              'This office doesn’t name recipients in its file names, so we '
+              + 'can’t tell who these went to.')),
         years.length > 1
           ? el('div', { class: 'panel' },
             el('h3', {}, 'By year'),
@@ -482,14 +490,14 @@ function viewRecipients() {
   }
 
   const out = el('div', {},
-    el('p', { class: 'hero' }, 'Who Congress writes to.'),
+    el('p', { class: 'hero' }, 'Who gets these letters'),
     el('p', { class: 'sub' },
       el('b', {}, num(INDEX.recipients_total || all.length)),
-      ' agencies, officials and companies are named in the filenames of these letters',
+      ' agencies, officials and companies have been written to',
       INDEX.recipients_total && INDEX.recipients_total > all.length
-        ? `; the ${num(all.length)} written to most often are below. ` : '. ',
-      'Agency abbreviations and the officials who ran them are folded together, so ',
-      'letters to Scott Pruitt and letters to the EPA count once.'),
+        ? `. The ${num(all.length)} most written-to are below. ` : '. ',
+      'We group an agency with the people who ran it, so letters to the EPA and ',
+      'letters to its administrator show up together.'),
     el('div', { class: 'controls' },
       el('input', {
         type: 'search', value: p.get('q') || '', placeholder: 'Filter recipients',
@@ -566,19 +574,47 @@ function viewTimeline() {
     }));
   }
 
+  const exact = (INDEX.precisions || {}).day || 0;
+  const fromPdf = (INDEX.precisions || {}).scanned || 0;
+  const guessed = (INDEX.precisions || {})['captured-by'] || 0;
+
   return el('div', {},
-    el('p', { class: 'hero' }, 'Letters by year.'),
+    el('p', { class: 'hero' }, 'Letters over time'),
     el('p', { class: 'sub' },
-      'Most of these dates come from the filename. Where the filename gave none, the letter is '
-      + 'placed at the first Wayback capture that saw it, which is an upper bound rather than a date — '
-      + `${num((INDEX.precisions || {})['captured-by'] || 0)} of `
-      + `${num(INDEX.letters)} letters.`),
+      'Click any year to read what was sent that year. ',
+      el('span', { class: 'muted' },
+        'Keep in mind this chart shows when letters were '),
+      el('span', { class: 'muted' }, el('em', {}, 'saved')),
+      el('span', { class: 'muted' },
+        ', not everything Congress sent — a quiet year here may just mean the '
+        + 'Wayback Machine visited those websites less often.')),
     el('div', { class: 'panel' }, bars,
       el('div', { class: 'axis' },
         ...[from, Math.round((from + to) / 2), to].map((y, i) => el('span', {
           style: `position:absolute;left:${((y - from) / Math.max(1, to - from)) * 100}%;`
             + `transform:translateX(${i === 0 ? 0 : i === 2 ? -100 : -50}%)`,
-        }, y)))));
+        }, y)))),
+    el('div', { class: 'panel' },
+      el('h3', {}, 'How we know when a letter was sent'),
+      el('p', { class: 'small' },
+        'Three ways, and the site always tells you which one it used.'),
+      el('ul', { class: 'rank' },
+        el('li', {}, el('span', { class: 'nm' },
+          el('b', {}, 'The date is in the file name. '),
+          'Exact. Shown as a normal date.'),
+          el('span', { class: 'n tab' }, num(exact))),
+        fromPdf
+          ? el('li', {}, el('span', { class: 'nm' },
+            el('b', {}, 'The PDF records when it was made. '),
+            'Usually the day the letter was scanned and posted — close, but it '
+            + 'can run a little late.'),
+            el('span', { class: 'n tab' }, num(fromPdf)))
+          : null,
+        el('li', {}, el('span', { class: 'nm' },
+          el('b', {}, 'Neither. '),
+          'We show when the Wayback Machine first saw the file, written as '
+          + '“by March 2016”. The letter existed by then, and may be older.'),
+          el('span', { class: 'n tab' }, num(guessed))))));
 }
 
 async function viewYear(yearText) {
@@ -606,7 +642,7 @@ async function viewYear(yearText) {
     el('div', { class: 'cols' },
       el('div', { class: 'panel' }, wall(rows)),
       el('div', { class: 'panel' },
-        el('h3', {}, 'Busiest that year'),
+        el('h3', {}, 'Wrote the most that year'),
         rankList(pairs.map(([m, r]) => [m.id, r.length]),
           id => link({ member: id }, null, byId.get(id)?.name || '—'), 14))));
 }
@@ -639,10 +675,10 @@ async function viewSearch(query) {
       el('b', {}, num(nameHits.length)), ' members, ',
       el('b', {}, num(recipientHits.length)), ' recipients, and ',
       el('b', {}, num(letterHits.length)),
-      ' letters among the members opened so far. ',
+      ' letters. ',
       el('span', { class: 'faint' },
-        'Letter search covers filenames, not the text of the letters — only 24% of these '
-        + 'PDFs have a text layer at all.')),
+        'This searches file names and descriptions, not the words inside the letters — '
+        + 'most of them are scans.')),
     nameHits.length
       ? el('div', { class: 'panel' }, el('h3', {}, 'Members'),
         el('div', { class: 'grid' }, ...nameHits.slice(0, 12).map(m =>
@@ -668,70 +704,95 @@ function viewAbout() {
   const precisions = INDEX.precisions || {};
   const kinds = INDEX.kinds || {};
   const captured = precisions['captured-by'] || 0;
+  const scanned = precisions['scanned'] || 0;
+  const named = Math.round(((INDEX.recipients || []).reduce((s, [, n]) => s + n, 0)
+    / Math.max(1, INDEX.letters)) * 100);
   return el('div', { class: 'prose' },
-    el('p', { class: 'hero' }, 'How this was built, and what it misses.'),
+    el('p', { class: 'hero' }, 'About these letters'),
 
-    el('h3', {}, 'Where the letters come from'),
-    el('p', {}, `Every sitting member of Congress has an official website, and most of them
-      publish the oversight letters they send — to agencies, to companies, to the President.
-      This explorer indexes those letters as the Wayback Machine preserved them:
-      ${num(INDEX.letters)} of them across ${num(INDEX.members_with_letters)} members.`),
-    el('p', {}, `That archive is not a convenience. A member's site is replaced wholesale when
-      the seat changes hands — the address survives, the content does not. Two sites checked
-      while building this, portman.senate.gov and braun.senate.gov, no longer resolve at all.
-      Their letters are still in the Wayback Machine.`),
-    el('p', {}, 'The index is Wayback’s CDX API, queried per member site. Archive-It is not a '
-      + 'source for this: its "Congress" collection returned no captures at all for '
-      + 'warren.senate.gov or grassley.senate.gov, because it archives political campaigns '
-      + 'rather than official member sites.'),
+    el('h3', {}, 'What this is'),
+    el('p', {}, `Members of Congress write letters all the time — to government agencies,
+      to companies, to the President — asking questions, making demands, pushing for
+      answers. Most of them post those letters on their own websites.`),
+    el('p', {}, `This is a collection of ${num(INDEX.letters)} of them, from
+      ${num(INDEX.members_with_letters)} members, going back to ${(INDEX.span || [])[0]}.
+      You can browse by who wrote them, by who they were sent to, or by year.`),
 
-    el('h3', {}, 'Why the filename is the description'),
-    el('p', {}, `Of 21 letter PDFs fetched and tested, five yielded extractable text —
-      about a quarter. The rest are scans of the signed original, which is what a letter is.
-      So the document cannot be read by a machine without OCR, and the URL has to carry the
-      meaning instead.`),
-    el('p', {}, 'It turns out to be good at it, because the people publishing these files named '
-      + 'them for people. A slug like '),
+    el('h3', {}, 'Why it matters that these are archived'),
+    el('p', {}, `When a member of Congress leaves office, their website doesn’t stay up.
+      The next person to hold the seat gets the same web address, and everything that was
+      there before is gone.`),
+    el('p', {}, `Two examples we hit while building this: portman.senate.gov and
+      braun.senate.gov. Neither loads any more. But the Wayback Machine saved copies, and
+      that’s where these letters come from — so for a lot of this, the archive is
+      the only copy left anywhere.`),
+
+    el('h3', {}, 'Where the descriptions come from'),
+    el('p', {}, `Most of these letters are scans — a photo of the signed page, not text a
+      computer can read. So the short description you see next to each one isn’t taken
+      from inside the letter. It comes from the name of the file.`),
+    el('p', {}, `That works better than it sounds, because staffers name these files for
+      people to read. A file called`),
     el('p', {}, el('code', {},
-      'pressley-warren-markey-letter-to-hhs-re-racial-disparities-in-vaccine-distribution')),
-    el('p', {}, 'states the co-signers, the recipient and the subject. That is where every '
-      + 'recipient and subject on this site comes from: the filename, not the letter.'),
+      'warren-markey-letter-to-hhs-re-vaccine-distribution.pdf')),
+    el('p', {}, `tells you who signed it, who got it, and what it was about. That’s where
+      the names and subjects on this site come from.`),
+    el('p', {}, `It also means the descriptions are rough. Where a file was named something
+      vague, you’ll see something vague. We’d rather show you that than make
+      something up.`),
 
-    el('h3', {}, 'Dates'),
-    el('p', {}, `${num(INDEX.letters - captured)} letters state a date in the filename.
-      The remaining ${num(captured)} do not, and are placed at the first Wayback capture that
-      saw them — which is a real upper bound, not a date. Those are shown as
-      "by March 2016" rather than as a day, everywhere they appear.`),
+    el('h3', {}, 'About the dates'),
+    el('p', {}, `Some letters have the date right in the filename, and those are exact.`),
+    scanned
+      ? el('p', {}, `For ${num(scanned)} others, we read the date out of the PDF itself —
+          when the file was created. For a scanned letter that’s usually the day it was
+          scanned and posted, which is normally the same day it was sent, but it can be a
+          little later.`)
+      : null,
+    el('p', {}, `And for ${num(captured)} letters we have no date at all, so we show when the
+      Wayback Machine first saw the file — written as “by March 2016”. The
+      letter existed by then. It may be older.`),
 
-    el('h3', {}, 'What it does not reach'),
-    el('p', {}, 'Only sitting members. A former member’s letters are in the archive too, but '
-      + 'mapping former members to the websites they once had is a separate problem, and this '
-      + 'does not attempt it yet. That material is the most at risk and the least replaceable.'),
-    el('p', {}, 'Only letters whose filename or URL says "letter". A letter published as an '
-      + 'untitled attachment, or named by topic alone, is not found by this method.'),
-    el('p', {}, `Recipients are named in ${Math.round(((INDEX.recipients || []).reduce(
-      (s, [, n]) => s + n, 0) / Math.max(1, INDEX.letters)) * 100)}% of these filenames.
-      Where a site names files by topic — "2022 crab disaster letter" — there is no recipient
-      to extract, and none is invented.`),
-    el('p', {}, 'Newsletters are excluded, which matters more than it sounds: "newsletter" '
-      + 'contains "letter", and for one senator 784 of 1,204 matching URLs were newsletters.'),
+    el('h3', {}, 'What’s missing'),
+    el('p', {}, `Only what was saved. The Wayback Machine visits some websites far more
+      often than others, so this is a sample of what Congress published, not a complete
+      record of what Congress sent. If a member has only a handful of letters here, that
+      may say more about how often the archive crawled their site than about how much
+      they wrote.`),
+    el('p', {}, `Only people currently serving. Letters from members who have already left
+      office are in the archive too, and they’re the ones most at risk of being
+      forgotten — but matching former members to the websites they used to have is a
+      bigger job, and we haven’t done it yet.`),
+    el('p', {}, `Only letters with the word “letter” somewhere in the file name or
+      web address. One posted as an unnamed attachment won’t show up here.`),
+    el('p', {}, `Only about ${named}% of files name who the letter went to. The rest just say
+      what it was about, so those show no recipient.`),
+    el('p', {}, `No newsletters — which takes some doing, since “newsletter”
+      has “letter” inside it. For one senator, 784 of the 1,204 matching files were
+      newsletters.`),
 
-    el('h3', {}, 'The corpus'),
+    el('h3', {}, 'By the numbers'),
     el('table', {}, el('tbody', {},
-      el('tr', {}, el('td', {}, 'Letters indexed'),
+      el('tr', {}, el('td', {}, 'Letters'),
         el('td', { class: 'n' }, num(INDEX.letters))),
-      el('tr', {}, el('td', {}, 'Members with letters'),
+      el('tr', {}, el('td', {}, 'Members of Congress'),
         el('td', { class: 'n' },
           `${num(INDEX.members_with_letters)} of ${num(INDEX.members_total)}`)),
-      el('tr', {}, el('td', {}, 'Documents (PDFs)'),
+      el('tr', {}, el('td', {}, 'Scanned documents'),
         el('td', { class: 'n' }, num(kinds.pdf || 0))),
-      el('tr', {}, el('td', {}, 'Press-release pages'),
+      el('tr', {}, el('td', {}, 'Press releases'),
         el('td', { class: 'n' }, num(kinds.page || 0))),
-      el('tr', {}, el('td', {}, 'Distinct recipients'),
-        el('td', { class: 'n' }, num((INDEX.recipients || []).length))),
-      el('tr', {}, el('td', {}, 'First pages rendered'),
+      el('tr', {}, el('td', {}, 'People and agencies written to'),
+        el('td', { class: 'n' }, num(INDEX.recipients_total
+          || (INDEX.recipients || []).length))),
+      el('tr', {}, el('td', {}, 'Previews made so far'),
         el('td', { class: 'n' }, num(INDEX.thumbs || 0))),
-      el('tr', {}, el('td', {}, 'Built'), el('td', { class: 'n' }, INDEX.built)))),
+      el('tr', {}, el('td', {}, 'Last updated'), el('td', { class: 'n' }, INDEX.built)))),
+
+    el('h3', {}, 'Credits'),
+    el('p', {}, 'Built at the Internet Archive from the Wayback Machine’s copies of ',
+      'congressional websites. The letters themselves are public records; every one links ',
+      'back to the archived original so you can read it yourself.'),
   );
 }
 

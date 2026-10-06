@@ -77,6 +77,8 @@ def main() -> None:
                         help="where index.json is written (the repo root)")
     parser.add_argument("--payload", type=Path, default=root / "payload",
                         help="per-member files and thumbnails, uploaded separately")
+    parser.add_argument("--pdf-dates", type=Path,
+                        default=root / "data" / "pdf-dates.jsonl")
     parser.add_argument("--item", default="",
                         help="archive.org item holding the payload; sets the "
                              "base URLs the published page fetches from")
@@ -88,6 +90,24 @@ def main() -> None:
         data_base, thumb_base = base + "member/", base + "thumbs/"
     else:
         data_base, thumb_base = "payload/member/", "payload/thumbs/"
+
+    # Dates the PDFs state about themselves, collected by the thumbnail pass.
+    # Preferred over the Wayback capture and beaten only by a date the
+    # filename states outright. Measured on 14 letters whose filename gave a
+    # date: all 14 PDFs carried one, 13 agreed within three days, median
+    # difference zero.
+    pdf_dates: dict[str, str] = {}
+    if args.pdf_dates.exists():
+        with args.pdf_dates.open(encoding="utf-8") as handle:
+            for line in handle:
+                try:
+                    row = json.loads(line)
+                except Exception:  # noqa: BLE001
+                    continue
+                if row.get("digest") and row.get("date"):
+                    pdf_dates[row["digest"]] = row["date"]
+    if pdf_dates:
+        print(f"  {len(pdf_dates):,} dates from PDF metadata", file=sys.stderr)
 
     member_rows = json.loads(args.members.read_text(encoding="utf-8"))
     members = {m["bioguide"]: m for m in member_rows}
@@ -110,22 +130,33 @@ def main() -> None:
                 continue
             total += 1
 
+            digest = record.get("digest") or ""
             kind = ("pdf" if record["mimetype"].startswith("application/pdf")
                     else "page")
             recipient = record.get("recipient_canonical")
             subject = tidy_subject(record.get("subject"))
-            best = record.get("date_best")
+            # Filename first, then what the PDF says about itself, then the
+            # capture. Only the first is the letter's own stated date; the
+            # second is when the file was made, which for a scan is when it
+            # was scanned.
+            best = record.get("date")
+            precision = record.get("date_precision")
+            if not best:
+                from_pdf = pdf_dates.get(digest or "")
+                if from_pdf:
+                    best, precision = from_pdf, "scanned"
+                else:
+                    best = record.get("date_best")
             year = int(best[:4]) if best else None
 
             # The capture digest is the content address of the letter, and
             # also the thumbnail's filename. Identical letters captured many
             # times share one digest, so they share one rendering.
-            digest = record.get("digest") or ""
             has_thumb = bool(digest) and (thumbs_dir / f"{digest}.jpg").exists()
 
             by_member[bioguide].append([
                 record["key"], record["timestamp"], kind, best,
-                record.get("date_precision"), recipient, subject,
+                precision, recipient, subject,
                 record.get("role"),
                 ",".join(record.get("cosigners") or []),
                 digest if has_thumb else "",
@@ -138,7 +169,7 @@ def main() -> None:
                 years[year] += 1
                 per_member_years[bioguide][year] += 1
             kinds[kind] += 1
-            precisions[record.get("date_precision") or "none"] += 1
+            precisions[precision or "none"] += 1
             if record.get("role"):
                 roles[record["role"]] += 1
 

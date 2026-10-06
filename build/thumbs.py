@@ -48,12 +48,14 @@ import argparse
 import concurrent.futures as cf
 import io
 import json
+import re
 import sys
 import threading
 import time
 import urllib.error
 import urllib.request
 from collections import Counter, defaultdict
+from datetime import date
 from pathlib import Path
 
 UA = {"User-Agent": "ia-congressional-member-letters/0.1 "
@@ -63,11 +65,52 @@ MAX_BYTES = 40 * 1024 * 1024      # a letter is not 40 MB; something else is
 WIDTH = 340                        # rendered thumbnail width in pixels
 
 _print_lock = threading.Lock()
+_dates_lock = threading.Lock()
 
 
 def wayback_url(record: dict) -> str:
     return (f"https://web.archive.org/web/{record['timestamp']}id_/"
             f"{record['url']}")
+
+
+PDF_DATE = re.compile(r"D:(\d{4})(\d{2})(\d{2})")
+
+
+def creation_date(blob: bytes) -> str | None:
+    """The date the PDF says it was made.
+
+    Worth taking because it costs nothing — the bytes are already here for the
+    thumbnail — and because it is far better than the fallback. Only 38% of
+    these letters state a date in their filename; the rest are currently
+    placed at the first Wayback capture that saw them, which can be years
+    late.
+
+    Measured against 14 letters whose filename gave a date: every one carried
+    a CreationDate, 13 of the 14 were within three days, and the median
+    difference was zero. The exception was off by 366 days, and the filename
+    looks like the wrong one there (2020.01.25 against a PDF saying 2021).
+
+    What it actually records, for a scan, is when the page was scanned rather
+    than when the letter was written. Offices seem to scan and publish the
+    same day, which is why the agreement is so close, but it is an inference
+    and the explorer labels it as one.
+    """
+    try:
+        import pypdf
+        meta = pypdf.PdfReader(io.BytesIO(blob)).metadata or {}
+    except Exception:  # noqa: BLE001
+        return None
+    for key in ("/CreationDate", "/ModDate"):
+        match = PDF_DATE.match(str(meta.get(key) or ""))
+        if not match:
+            continue
+        year, month, day = (int(g) for g in match.groups())
+        if 1990 <= year <= date.today().year and 1 <= month <= 12 and 1 <= day <= 31:
+            try:
+                return date(year, month, day).isoformat()
+            except ValueError:
+                continue
+    return None
 
 
 def render(blob: bytes, out_path: Path) -> None:
@@ -86,7 +129,8 @@ def render(blob: bytes, out_path: Path) -> None:
         document.close()
 
 
-def one(record: dict, thumbs: Path, pause: float, retries: int) -> str:
+def one(record: dict, thumbs: Path, pause: float, retries: int,
+        dates_path: Path) -> str:
     digest = record.get("digest") or ""
     if not digest:
         return "no-digest"
@@ -134,6 +178,9 @@ def main() -> None:
     parser.add_argument("--pause", type=float, default=0.75,
                         help="seconds to wait before each request")
     parser.add_argument("--retries", type=int, default=3)
+    parser.add_argument("--dates", type=Path,
+                        default=root / "data" / "pdf-dates.jsonl",
+                        help="digest -> date the PDF says it was made")
     parser.add_argument("--max", type=int, default=0,
                         help="stop after this many renders (0 = no limit)")
     parser.add_argument("--per-member", type=int, default=0,
@@ -174,7 +221,7 @@ def main() -> None:
     done = 0
     with cf.ThreadPoolExecutor(max_workers=args.workers) as pool:
         futures = {pool.submit(one, j, args.thumbs, args.pause,
-                               args.retries): j for j in pending}
+                               args.retries, args.dates): j for j in pending}
         for future in cf.as_completed(futures):
             try:
                 outcome = future.result()

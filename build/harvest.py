@@ -57,6 +57,7 @@ from __future__ import annotations
 import argparse
 import concurrent.futures as cf
 import json
+import os
 import re
 import sys
 import time
@@ -373,13 +374,35 @@ def keep(row: dict) -> bool:
     return mimetype.startswith("application/pdf") or mimetype.startswith("text/html")
 
 
+def write_cache(path: Path, payload: dict) -> None:
+    """Write a cache entry atomically.
+
+    These runs are killed on a timer, and a kill during write leaves a
+    half-written file: foushee.house.gov was cached as 175 bytes of truncated
+    JSON, which then raised JSONDecodeError on every later pass. Writing to a
+    sibling and renaming makes the entry appear whole or not at all.
+    """
+    staged = path.with_suffix(f".tmp{os.getpid()}")
+    staged.write_text(json.dumps(payload), encoding="utf-8")
+    staged.replace(path)
+
+
+def read_cache(path: Path) -> dict | None:
+    """A cache entry, or None if it is missing or unreadable."""
+    if not path.exists():
+        return None
+    try:
+        return json.loads(path.read_text(encoding="utf-8"))
+    except Exception:  # noqa: BLE001 — a corrupt entry is simply not an entry
+        return None
+
+
 def harvest_host(member: dict, cache_dir: Path) -> dict:
     host = member["host"]
     cache_path = cache_dir / f"{host}.json"
-    if cache_path.exists():
-        cached = json.loads(cache_path.read_text(encoding="utf-8"))
-        if "error" not in cached and cached.get("method") == CACHE_METHOD:
-            return cached
+    cached = read_cache(cache_path)
+    if cached and "error" not in cached and cached.get("method") == CACHE_METHOD:
+        return cached
 
     result: dict = {"host": host, "bioguide": member["bioguide"]}
     # ALWAYS PARTITIONED. This was a fallback for hosts that errored, until
@@ -399,13 +422,13 @@ def harvest_host(member: dict, cache_dir: Path) -> dict:
         rows = cdx_rows_paged(host)
     except Exception as exc:  # noqa: BLE001
         result["error"] = str(exc)[:160]
-        cache_path.write_text(json.dumps(result), encoding="utf-8")
+        write_cache(cache_path, result)
         return result
     result["method"] = CACHE_METHOD
     result["page_size"] = PAGE_SIZE
 
     result["rows"] = rows
-    cache_path.write_text(json.dumps(result), encoding="utf-8")
+    write_cache(cache_path, result)
     return result
 
 
@@ -496,10 +519,9 @@ def main() -> None:
     print(f"{len(members)} members", file=sys.stderr)
 
     def needs_query(member: dict) -> bool:
-        path = args.cache / f"{member['host']}.json"
-        if not path.exists():
+        cached = read_cache(args.cache / f"{member['host']}.json")
+        if cached is None:
             return True
-        cached = json.loads(path.read_text(encoding="utf-8"))
         return "error" in cached or cached.get("method") != CACHE_METHOD
 
     todo = [] if args.export_only else [m for m in members if needs_query(m)]
@@ -535,7 +557,7 @@ def main() -> None:
             path = args.cache / f"{member['host']}.json"
             if not path.exists():
                 continue
-            cached = json.loads(path.read_text(encoding="utf-8"))
+            cached = read_cache(path) or {}
             rows = cached.get("rows", [])
             raw_total += len(rows)
             for letter in clean(rows):
