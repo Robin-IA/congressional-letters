@@ -40,7 +40,7 @@ from datetime import date as date_type
 from pathlib import Path
 
 COLUMNS = ["key", "timestamp", "kind", "date", "precision", "recipient",
-           "subject", "role", "cosigners", "digest"]
+           "subject", "topics", "cosigners", "digest"]
 
 # Words that say nothing about a letter and make a subject read like debris.
 STOPWORDS = {
@@ -159,7 +159,7 @@ def main() -> None:
             by_member[bioguide].append([
                 record["key"], record["timestamp"], kind, best,
                 precision, recipient, subject,
-                record.get("role"),
+                ",".join(tag_topics(f"{subject or ''} {recipient or ''}")),
                 ",".join(record.get("cosigners") or []),
                 digest if has_thumb else "",
             ])
@@ -188,6 +188,14 @@ def main() -> None:
     search_recipients: list[str] = []
     member_slot: dict[str, int] = {}
     recipient_slot: dict[str, int] = {}
+
+    topic_counts: Counter = Counter()
+    with_topics = 0
+    for row in letters:
+        tags = [t for t in (row[COLUMNS.index("topics")] or "").split(",") if t]
+        if tags:
+            with_topics += 1
+        topic_counts.update(tags)
 
     out_member = args.payload / "member"
     if out_member.exists():
@@ -220,8 +228,9 @@ def main() -> None:
                 # date the Wayback Machine first saw the file. Sorting mixes
                 # the two, and a capture year looks exact unless it is marked.
                 exact = 0 if row[COLUMNS.index("precision")] == "captured-by" else 1
+                topics = row[COLUMNS.index("topics")]
                 search_rows.append([m_idx, r_idx, year, row_idx, subject or "",
-                                    exact])
+                                    exact, topics])
             (out_member / f"{bioguide}.json").write_text(
                 json.dumps(letters, ensure_ascii=False, separators=(",", ":")),
                 encoding="utf-8")
@@ -256,6 +265,8 @@ def main() -> None:
         "span": [min(years), max(years)] if years else None,
         "kinds": dict(kinds),
         "precisions": dict(precisions),
+        "with_topics": with_topics,
+        "topics": topic_counts.most_common(120),
         "roles": dict(roles),
         # The page shows the top 200 but must not report that as the total:
         # there are thousands, most of them named once.

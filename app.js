@@ -217,6 +217,13 @@ function sparkline(counts, from, to) {
 
 // The letter itself. For most of these the scan IS the document — only 24% of
 // the PDFs carry a text layer — so the page is the primary thing to show.
+function topicTags(row) {
+  const raw = get(row, 'topics');
+  if (!raw) return null;
+  return raw.split(',').filter(Boolean).map(t =>
+    link({ view: 'search', q: t }, 'topic', t));
+}
+
 function shot(row) {
   const src = thumbUrl(row);
   const subject = get(row, 'subject');
@@ -235,6 +242,7 @@ function shot(row) {
         : el('span', { class: 'none' },
           get(row, 'kind') === 'pdf' ? 'Preview coming soon' : 'Press release')),
     el('span', { class: 'cap' }, caption),
+    (() => { const t = topicTags(row); return t && t.length ? el('span', { class: 'topics' }, t) : null; })(),
     el('span', { class: 'when' }, when(row),
       recipient && subject ? ` · ${recipient}` : ''),
   );
@@ -271,7 +279,7 @@ function table(rows, opts = {}) {
           : el('span', { class: 'faint' }, 'not named')),
       el('td', { class: 'sub2' },
         get(row, 'subject') || el('span', { class: 'faint' }, '—'),
-        ),
+        (() => { const t = topicTags(row); return t && t.length ? el('span', { class: 'topics' }, t) : null; })()),
       el('td', {},
         el('a', {
           href: waybackUrl(row), target: '_blank', rel: 'noopener',
@@ -732,7 +740,7 @@ async function viewSearch(query) {
     }));
 
   if (!needle) {
-    const picks = INDEX.suggestions || [];
+    const picks = (INDEX.topics || []).slice(0, 18).map(([t]) => t);
     return el('div', {}, box,
       el('p', { class: 'hero' }, 'What are you looking for?'),
       el('p', { class: 'sub' },
@@ -764,11 +772,15 @@ async function viewSearch(query) {
   const failed = loaded && loaded.failed;
   const letterHits = [];
   if (data) {
-    for (const [mIdx, rIdx, year, rowIdx, subject, exact] of data.rows) {
+    for (const [mIdx, rIdx, year, rowIdx, subject, exact, topics] of data.rows) {
       const recipient = rIdx >= 0 ? data.recipients[rIdx] : '';
+      // Topics are matched too, so "FEMA" finds a letter whose description
+      // never says FEMA but which the vocabulary tagged as being about it.
       if (subject.toLowerCase().includes(needle)
-          || recipient.toLowerCase().includes(needle)) {
-        letterHits.push([data.members[mIdx], recipient, year, subject, exact, rowIdx]);
+          || recipient.toLowerCase().includes(needle)
+          || (topics || '').toLowerCase().includes(needle)) {
+        letterHits.push([data.members[mIdx], recipient, year, subject, exact,
+                         rowIdx, topics || '']);
         if (letterHits.length >= 4000) break;
       }
     }
@@ -797,7 +809,7 @@ async function viewSearch(query) {
     el('thead', {}, el('tr', {},
       el('th', {}, 'Year'), el('th', {}, 'Member'),
       el('th', {}, 'Sent to'), el('th', {}, 'Scope of letter'), el('th', {}, ''))),
-    el('tbody', {}, ...visible.map(([mid, recipient, year, subject, exact, rowIdx]) => {
+    el('tbody', {}, ...visible.map(([mid, recipient, year, subject, exact, rowIdx, topics]) => {
       const m = byId.get(mid);
       const row = letterOf(mid, rowIdx);
       const href = row ? waybackUrl(row) : null;
@@ -812,7 +824,12 @@ async function viewSearch(query) {
           href
             ? el('a', { href, target: '_blank', rel: 'noopener' },
               subject || 'Open this letter')
-            : (subject || el('span', { class: 'faint' }, '—'))),
+            : (subject || el('span', { class: 'faint' }, '—')),
+          topics
+            ? el('span', { class: 'topics' },
+              topics.split(',').filter(Boolean).map(t =>
+                link({ view: 'search', q: t }, 'topic', t)))
+            : null),
         el('td', {}, href
           ? el('a', { href, target: '_blank', rel: 'noopener', class: 'small' },
             row && get(row, 'kind') === 'pdf' ? 'Read it' : 'Open')
