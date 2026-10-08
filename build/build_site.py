@@ -39,6 +39,10 @@ from collections import Counter, defaultdict
 from datetime import date as date_type
 from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+
+from topics import tag as tag_topics  # noqa: E402
+
 COLUMNS = ["key", "timestamp", "kind", "date", "precision", "recipient",
            "subject", "topics", "cosigners", "digest"]
 
@@ -191,11 +195,12 @@ def main() -> None:
 
     topic_counts: Counter = Counter()
     with_topics = 0
-    for row in letters:
-        tags = [t for t in (row[COLUMNS.index("topics")] or "").split(",") if t]
-        if tags:
-            with_topics += 1
-        topic_counts.update(tags)
+    for member_rows_ in by_member.values():
+        for row in member_rows_:
+            tags = [t for t in (row[COLUMNS.index("topics")] or "").split(",") if t]
+            if tags:
+                with_topics += 1
+            topic_counts.update(tags)
 
     out_member = args.payload / "member"
     if out_member.exists():
