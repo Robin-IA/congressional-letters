@@ -94,14 +94,39 @@ class Keep(unittest.TestCase):
         self.assertTrue(keep(letter(
             "x.house.gov/press-releases/letter-to-epa.pdf")))
 
-    def test_keeps_a_download_wrapper_and_a_letter_of_support(self):
-        # /download/ is how several offices publish the letter itself, and a
-        # letter of support — for a grant, a nomination — is a real letter.
-        self.assertTrue(keep(letter(
-            "warren.senate.gov/download/letter-to-hhs-on-vaccines",
-            mimetype="text/html")))
+    def test_keeps_a_letter_of_support(self):
+        # A letter of support — for a grant, a nomination — is a real letter.
         self.assertTrue(keep(letter(
             "x.senate.gov/imo/media/doc/letter-of-support-for-grant.pdf")))
+
+    def test_rejects_a_download_wrapper(self):
+        # This was kept until it was replayed. The capture is a ColdFusion
+        # interstitial carrying "refresh: 2; url=...&download=1", so it shows
+        # the member's page furniture and no letter — which is how some of
+        # Elizabeth Warren's letters came to open to nothing. 13,708 of these.
+        # build/resolve_wrappers.py chases them to the file behind them.
+        self.assertFalse(keep(letter(
+            "warren.senate.gov/download/20181109-letter-to-commerce-daeo",
+            mimetype="text/html")))
+
+    def test_rejects_an_announcement_page(self):
+        # The same thing press releases are, under paths PRESS_RELEASE does not
+        # name. 7,220 of them, and none is the letter.
+        for url in (
+            "warren.senate.gov/oversight/letters/warren-questions-federal-"
+            "student-aid-chief-on-servicer-transfers",
+            "davis.house.gov/statements/rep-davis-joins-letter-on-tax-filing",
+            "wilson.house.gov/media/in-the-news/rep-wilson-letter-to-potus",
+            "kennedy.senate.gov/public/2020/12/kennedy-leads-letter-to-potus",
+        ):
+            self.assertFalse(keep(letter(url, mimetype="text/html")), url)
+
+    def test_keeps_a_pdf_served_as_html(self):
+        # 85 captures are PDFs whose content-type says text/html. The path is
+        # the tell, and they are letters.
+        self.assertTrue(keep(letter(
+            "x.senate.gov/imo/media/doc/letter-to-epa.pdf",
+            mimetype="text/html")))
 
     def test_rejects_a_section_index_page(self):
         # /media-center/letters is the listing, not a letter. The depth rule

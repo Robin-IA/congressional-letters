@@ -139,6 +139,39 @@ PRESS_RELEASE = re.compile(
 # A paginated list view, not a document.
 PAGINATION = re.compile(r"[?&]page=\d+", re.IGNORECASE)
 
+# THE LETTER, NOT A PAGE ABOUT THE LETTER.
+#
+# Every HTML capture here was being counted as a letter, and 20,338 of 89,891
+# were. Two kinds, both wrong, and the second is the one that shows:
+#
+#   /oversight/letters/warren-questions-federal-student-aid-chief-on-...
+#   /statements/rep-davis-joins-rep-pressley-in-letter-to-bureau-of-prisons
+#   /media/in-the-news/rep-wilson-letter-to-potus-supporting-ketanji-brown-...
+#
+# are announcement pages — a press release wearing the word "letter", which is
+# the same thing PRESS_RELEASE above already rejects at other paths. 7,220.
+#
+#   /download/20181109-letter-to-commerce-daeo-re-ross-conflict-of-interest
+#
+# is the Senate CMS download wrapper, and it is not a page about the letter so
+# much as a page instead of it. The capture carries
+#
+#   x-archive-orig-refresh: 2; url=//...-of-interest&download=1
+#
+# so the crawler archived a ColdFusion interstitial that meta-refreshes to the
+# real file two seconds later. Replay it and you get the member's page
+# furniture and no letter — which is exactly why some of Elizabeth Warren's
+# letters opened to nothing. 13,118 of these, 7,006 of which we already hold
+# as a PDF at the real URL.
+#
+# Both go. The wrappers are recovered by build/resolve_wrappers.py, which
+# follows the interstitial to the PDF behind it and writes a real row; the
+# announcements are not letters and do not come back.
+#
+# A capture served as text/html whose path still ends .pdf is a letter with the
+# wrong content-type, not a page. 85 of those, and they stay.
+HTML_BUT_A_FILE = re.compile(r"\.pdf$", re.IGNORECASE)
+
 # The section's own index page: /media-center/letters, /posts/letters,
 # /media/letters-0. The depth rule cannot catch these, because the word IS the
 # last segment — it is just the name of a listing rather than of a letter.
@@ -401,7 +434,13 @@ def keep(row: dict) -> bool:
     if depth is None or depth > MAX_LETTER_DEPTH:
         return False
     mimetype = (row.get("mimetype") or "").lower()
-    return mimetype.startswith("application/pdf") or mimetype.startswith("text/html")
+    if mimetype.startswith("application/pdf"):
+        return True
+    # See HTML_BUT_A_FILE. An HTML capture is kept only when its path says it
+    # is really a file; otherwise it is an announcement or a download wrapper,
+    # and neither of those is the letter.
+    return (mimetype.startswith("text/html")
+            and bool(HTML_BUT_A_FILE.search(url.split("?", 1)[0])))
 
 
 def write_cache(path: Path, payload: dict) -> None:
@@ -540,6 +579,10 @@ def main() -> None:
                         help="probe only the first N members")
     parser.add_argument("--export-only", action="store_true",
                         help="re-filter the cache without touching the network")
+    parser.add_argument("--resolved", type=Path,
+                        default=root / "data" / "wrapper-resolved.jsonl",
+                        help="letters recovered from download wrappers by "
+                             "build/resolve_wrappers.py; merged in if present")
     args = parser.parse_args()
 
     args.cache.mkdir(parents=True, exist_ok=True)
@@ -587,7 +630,23 @@ def main() -> None:
                       f"{(time.time() - started) / 60:.0f}m",
                       file=sys.stderr, flush=True)
 
-    total = raw_total = 0
+    # Letters recovered from the download wrappers keep() now rejects. Merged
+    # here rather than appended afterwards so they go through the same
+    # de-duplication as everything else: a wrapper whose target we already hold
+    # under its own URL must not arrive twice.
+    resolved: dict[str, list[dict]] = {}
+    if args.resolved.exists():
+        with args.resolved.open(encoding="utf-8") as handle:
+            for line in handle:
+                try:
+                    row = json.loads(line)
+                except Exception:  # noqa: BLE001
+                    continue
+                resolved.setdefault(row["host"], []).append(row)
+        print(f"  {sum(len(v) for v in resolved.values()):,} recovered from "
+              f"wrappers ({args.resolved.name})", file=sys.stderr)
+
+    total = raw_total = recovered = 0
     with args.out.open("w", encoding="utf-8") as sink:
         for member in all_members:
             path = args.cache / f"{member['host']}.json"
@@ -596,14 +655,25 @@ def main() -> None:
             cached = read_cache(path) or {}
             rows = cached.get("rows", [])
             raw_total += len(rows)
-            for letter in clean(rows):
+            letters = clean(rows)
+            have = {letter["key"] for letter in letters}
+            for row in resolved.get(member["host"], []):
+                key = canonical(row["url"])
+                if not key or key in have:
+                    continue
+                have.add(key)
+                letters.append({"key": key, **row})
+                recovered += 1
+            letters.sort(key=lambda letter: letter["key"])
+            for letter in letters:
                 sink.write(json.dumps(
                     {"bioguide": member["bioguide"], "host": member["host"],
                      **letter}, ensure_ascii=False) + "\n")
                 total += 1
 
     print(f"\nwrote {total:,} letters to {args.out} "
-          f"(from {raw_total:,} raw rows)", file=sys.stderr)
+          f"(from {raw_total:,} raw rows, {recovered:,} of them recovered "
+          f"from download wrappers)", file=sys.stderr)
     if failed:
         print(f"{failed} hosts failed; re-run to retry only those",
               file=sys.stderr)

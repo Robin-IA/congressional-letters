@@ -150,6 +150,15 @@ def one(record: dict, thumbs: Path, pause: float, retries: int,
                 return "too-big"
             if not blob.startswith(b"%PDF"):
                 return "not-pdf"
+            # Read the date out of the same bytes. Appended as it is found, so
+            # a run killed on the timer keeps what it learned.
+            found = creation_date(blob)
+            if found:
+                line = json.dumps({"digest": digest, "date": found})
+                with _dates_lock:
+                    dates_path.parent.mkdir(parents=True, exist_ok=True)
+                    with dates_path.open("a", encoding="utf-8") as handle:
+                        handle.write(line + chr(10))
             staged = out_path.with_suffix(".part")
             render(blob, staged)
             staged.replace(out_path)

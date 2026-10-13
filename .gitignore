@@ -6,3 +6,6 @@ data/roster/
 data/pdfs/
 payload/
 __pycache__/
+data/wrapper-targets.jsonl
+data/wrapper-resolved.jsonl
+data/pdf-dates.jsonl
