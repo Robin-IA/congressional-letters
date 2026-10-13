@@ -165,22 +165,40 @@ and uploaded with `build/upload_item.py`. See [deploy/README.md](deploy/README.m
 ## Rebuilding
 
 ```bash
-python3 build/harvest.py --workers 5     # CDX per member site; resumable
-python3 build/parse_urls.py              # URLs -> date, recipient, subject
-python3 build/build_site.py              # write site/data/
-python3 build/thumbs.py --per-member 4   # render first pages, breadth first
+python3 build/harvest.py --workers 5      # CDX per member site; resumable
+python3 build/resolve_wrappers.py         # chase download pages to the file
+python3 build/parse_urls.py               # URLs -> date, recipient, subject
+python3 build/thumbs.py                   # render first pages; runs for days
+python3 build/publish_thumbs.py           # payload/thumbs -> thumbs/
+python3 build/build_site.py --item letters-from-congress-data --thumb-base thumbs/
 python3 -m unittest discover -s tests
 ```
 
 `harvest.py` caches **raw** CDX rows and cleans on the way out, so a newly
 discovered kind of junk costs a re-filter rather than another pass over 539
-hosts. Querying is hours; filtering is seconds.
+hosts. Querying is hours; filtering is seconds — which is how dropping 20,241
+announcement pages and download wrappers cost one `--export-only` run rather
+than a re-harvest.
+
+`thumbs.py` and `resolve_wrappers.py` both take days and neither has to finish.
+They are resumable, they are deliberately slow — two workers and a pause,
+because four earned a rate limit that outlasted the run that earned it — and
+the explorer is correct without either. Both are ordered so that stopping early
+leaves the best version of an unfinished job: the renderer walks across all 514
+members by position on each member's own page, so every member's opening screen
+fills together rather than one member finishing while another stays blank.
 
 | | |
 | --- | --- |
-| `site/data/index.json` | members, counts, facets, year histogram, column order |
-| `site/data/member/<bioguide>.json` | one member's letters, fetched on demand |
-| `site/thumbs/<digest>.jpg` | rendered first pages, by capture digest |
+| `index.json` | members, counts, facets, year histogram, column order, cache stamp |
+| `payload/member/<bioguide>.json` | one member's letters, fetched on demand |
+| `thumbs/<digest>.jpg` | rendered first pages, by capture digest |
+
+Anything the browser fetches that a build rewrites is fetched with the stamp
+from `index.json` on it. Three separate caches — the Pages CDN, the browser,
+and archive.org's — each served a previous build at some point during one
+afternoon, and the failure is silent: the page does not break, it describes a
+build that is no longer there.
 
 `build/ia_search.py` is vendored from `collection-analysis` and carries that
 project's notes on these endpoints.
