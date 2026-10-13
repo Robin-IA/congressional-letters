@@ -33,7 +33,6 @@ from __future__ import annotations
 import argparse
 import json
 import re
-import shutil
 import sys
 from collections import Counter, defaultdict
 from datetime import date as date_type
@@ -214,10 +213,22 @@ def main() -> None:
                 with_topics += 1
             topic_counts.update(tags)
 
+    # Rewritten in place, and stale files removed at the end rather than the
+    # directory emptied at the start. The uploader reads this directory and
+    # takes hours over it — the item rations how fast it will accept files — so
+    # a build that begins by deleting everything fails outright the moment the
+    # two overlap:
+    #
+    #   PermissionError: [WinError 32] ... being used by another process:
+    #   payload/member/A000370.json
+    #
+    # Nothing is gained by emptying it first. A member who loses every letter
+    # is caught below by name, and until then their old file is still the file
+    # the page would have fetched anyway.
     out_member = args.payload / "member"
-    if out_member.exists():
-        shutil.rmtree(out_member)
     out_member.mkdir(parents=True, exist_ok=True)
+    before = {path.name for path in out_member.glob("*.json")}
+    written: set[str] = set()
 
     index_members = []
     for bioguide, member in members.items():
@@ -251,6 +262,7 @@ def main() -> None:
             (out_member / f"{bioguide}.json").write_text(
                 json.dumps(letters, ensure_ascii=False, separators=(",", ":")),
                 encoding="utf-8")
+            written.add(f"{bioguide}.json")
 
         member_years = per_member_years.get(bioguide, Counter())
         index_members.append({
@@ -271,6 +283,14 @@ def main() -> None:
                     per_member_recipients.get(bioguide, Counter()).most_common(3)],
         })
     index_members.sort(key=lambda m: -m["letters"])
+
+    # Members who had letters last build and have none now. Four left when the
+    # announcement pages went, having published nothing else.
+    for name in sorted(before - written):
+        try:
+            (out_member / name).unlink()
+        except OSError as exc:  # noqa: PERF203 — a file someone else has open
+            print(f"  could not remove stale {name}: {exc}", file=sys.stderr)
 
     index = {
         "built": date_type.today().isoformat(),
