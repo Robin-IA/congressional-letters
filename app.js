@@ -1049,7 +1049,10 @@ async function render() {
 }
 
 async function boot() {
-  const response = await fetch(INDEX_URL);
+  // Revalidated rather than taken from cache. index.json is rewritten by every
+  // build and carries every headline figure on the page, so a stale copy does
+  // not degrade the page — it makes it state numbers that are wrong.
+  const response = await fetch(INDEX_URL, { cache: 'no-cache' });
   if (!response.ok) throw new Error(`index.json: HTTP ${response.status}`);
   INDEX = await response.json();
   if (INDEX.data_base) DATA_BASE = INDEX.data_base;

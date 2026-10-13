@@ -181,6 +181,12 @@ table.letters td:last-child { width: 6rem; white-space: nowrap; }
   </div></footer>
 </div>
 <noscript><p style="padding:2rem">This explorer needs JavaScript.</p></noscript>
-<script type="module" src="app.js"></script>
+<!-- The query string is a cache key, not a parameter: GitHub Pages' CDN went
+     on serving the previous app.js to new visitors in new tabs after a deploy,
+     while a cache-busted fetch of the same URL returned the new one. The page
+     therefore showed figures the data no longer supported — 36% where
+     index.json said 46%, and a "Press releases" row for a thing this
+     collection had stopped containing. Bump this whenever app.js changes. -->
+<script type="module" src="app.js?v=2026-10-13b"></script>
 </body>
 </html>
