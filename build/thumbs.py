@@ -226,6 +226,51 @@ def main() -> None:
                if not (args.thumbs / f"{j['digest']}.jpg").exists()]
     print(f"{len(jobs):,} distinct PDFs, {len(pending):,} still to render",
           file=sys.stderr)
+
+    # RENDER WHAT IS ON SCREEN FIRST, FOR EVERY MEMBER AT ONCE.
+    #
+    # This will not finish. 43,672 first pages at a rate that has to stay
+    # polite is days of work, and the explorer is read long before then — so
+    # what matters is not how many are rendered but which.
+    #
+    # Two orderings were wrong before this one. Corpus order is alphabetical by
+    # URL, which is arbitrary, and left 67 members with nothing at all. Fewest-
+    # thumbnails-first fixes that and is still wrong, because it serves the
+    # richest member last — and the richest member is Elizabeth Warren, who
+    # sits at the top of the list and is the first page anyone opens. Hers was
+    # a full screen of "preview coming soon" while the count said 3,319.
+    #
+    # A member's letters are shown oldest first, so what a visitor sees is that
+    # member's first few letters by date — not by URL, and not whichever ones
+    # happen to be done. So each job is ranked by its position in its own
+    # member's displayed order, and the queue is walked across members: every
+    # member's first letter, then every member's second. Stop at any point and
+    # all 514 members have their opening screen filled to the same depth.
+    members_seen: set[str] = set()
+    by_member: dict[str, list[dict]] = defaultdict(list)
+    for job in jobs:
+        members_seen.add(job["bioguide"])
+        by_member[job["bioguide"]].append(job)
+    rank: dict[str, int] = {}
+    for bioguide, member_jobs in by_member.items():
+        # The same key build_site.py sorts a member page by, so position here
+        # means position there.
+        member_jobs.sort(key=lambda j: (j.get("date") or j.get("date_best")
+                                        or "9999", j["key"]))
+        for index, job in enumerate(member_jobs):
+            rank[job["digest"]] = index
+    pending.sort(key=lambda j: (rank.get(j["digest"], 1 << 30), j["bioguide"]))
+
+    done_per_member: Counter = Counter()
+    for job in jobs:
+        if (args.thumbs / f"{job['digest']}.jpg").exists():
+            done_per_member[job["bioguide"]] += 1
+    bare = sum(1 for bioguide in members_seen if not done_per_member[bioguide])
+    print(f"  {len(members_seen):,} members with a PDF to render; "
+          f"{bare:,} of them hold no thumbnail yet", file=sys.stderr)
+    print(f"  queued by position on the member's own page, so every member's "
+          f"opening screen fills together", file=sys.stderr)
+
     if args.max:
         pending = pending[: args.max]
         print(f"  limited to {len(pending):,} this run", file=sys.stderr)
