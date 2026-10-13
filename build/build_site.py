@@ -277,6 +277,10 @@ def main() -> None:
         # there are thousands, most of them named once.
         "recipients": recipients.most_common(200),
         "recipients_total": len(recipients),
+        # Letters that name a recipient at all. The about page used to derive
+        # this by summing the 200 recipients it is shown, which is most of them
+        # but not all, and it reported 36% where the real figure is 46%.
+        "with_recipient": sum(recipients.values()),
         "thumbs": sum(1 for rows in by_member.values()
                       for row in rows if row[9]),
         # Where the browser fetches the bulk data from. Relative paths serve

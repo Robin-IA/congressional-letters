@@ -892,10 +892,12 @@ async function viewSearch(query) {
 
 function viewAbout() {
   const precisions = INDEX.precisions || {};
-  const kinds = INDEX.kinds || {};
   const captured = precisions['captured-by'] || 0;
   const scanned = precisions['scanned'] || 0;
-  const named = Math.round(((INDEX.recipients || []).reduce((s, [, n]) => s + n, 0)
+  // INDEX.recipients is only the 200 shown, so summing it undercounts: it
+  // reported 36% where the real figure is 46%.
+  const named = Math.round(((INDEX.with_recipient
+    || (INDEX.recipients || []).reduce((s, [, n]) => s + n, 0))
     / Math.max(1, INDEX.letters)) * 100);
   return el('div', { class: 'prose' },
     el('p', { class: 'hero' }, 'About these letters'),
@@ -951,6 +953,12 @@ function viewAbout() {
       bigger job, and we haven’t done it yet.`),
     el('p', {}, `Only letters with the word “letter” somewhere in the file name or
       web address. One posted as an unnamed attachment won’t show up here.`),
+    el('p', {}, `Only the letter itself — not pages about it. A lot of what
+      turns up in a search for “letter” is a news item announcing that a letter
+      was sent, or a download page that just forwards you to the file. Opening
+      either one gets you the member’s website, not the letter. We took out
+      20,241 of those. Where a download page was the only copy we had, we
+      followed it through to the file behind it and kept that instead.`),
     el('p', {}, `Only about ${named}% of files name who the letter went to. The rest just say
       what it was about, so those show no recipient.`),
     el('p', {}, `No newsletters — which takes some doing, since “newsletter”
@@ -964,10 +972,11 @@ function viewAbout() {
       el('tr', {}, el('td', {}, 'Members of Congress'),
         el('td', { class: 'n' },
           `${num(INDEX.members_with_letters)} of ${num(INDEX.members_total)}`)),
-      el('tr', {}, el('td', {}, 'Scanned documents'),
-        el('td', { class: 'n' }, num(kinds.pdf || 0))),
-      el('tr', {}, el('td', {}, 'Press releases'),
-        el('td', { class: 'n' }, num(kinds.page || 0))),
+      // There used to be a "Scanned documents" and a "Press releases" row
+      // here, split on the capture's content type. Both were wrong: only
+      // about three quarters of the PDFs are scans, and the 85 files counted
+      // as press releases were letters whose web server simply gave them the
+      // wrong type. Press releases are not in this collection at all now.
       el('tr', {}, el('td', {}, 'People and agencies written to'),
         el('td', { class: 'n' }, num(INDEX.recipients_total
           || (INDEX.recipients || []).length))),
