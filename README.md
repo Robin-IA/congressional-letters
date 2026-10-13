@@ -159,7 +159,7 @@ bulk of the data in an archive.org item the browser reads directly — item
 downloads carry `Access-Control-Allow-Origin: *`, so no server is involved.
 
 `index.json` (~160 KB) sits in the repository so the page paints immediately.
-`payload/` — 514 per-member files and the rendered first pages — is gitignored
+`payload/` — 514 per-member files — is gitignored
 and uploaded with `build/upload_item.py`. See [deploy/README.md](deploy/README.md).
 
 ## Rebuilding

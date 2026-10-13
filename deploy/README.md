@@ -14,27 +14,61 @@ viewer puts it, no server and no build.
 | | | |
 | --- | --- | --- |
 | `index.html`, `app.js` | the repository, at the root | Pages serves from root, as etd-viewer does |
-| `index.json` | the repository, ~160 KB | members, counts, facets, year histogram — so the page paints at once |
+| `index.json` | the repository, ~165 KB | members, counts, facets, year histogram — so the page paints at once |
 | `payload/member/<id>.json` | an archive.org item | ~15 MB across 514 files, fetched one member at a time |
-| `payload/thumbs/<digest>.jpg` | an archive.org item | ~1.3 GB when the renderer finishes |
+| `thumbs/<digest>.jpg` | **the repository, for now** | ~120 MB today; see below |
 
-`payload/` is gitignored. 1.3 GB does not belong in a Pages repository, which
-is the same reason the North Korea explorer keeps its screenshots on an item.
+`payload/` is gitignored.
+
+## Why the thumbnails are in the repository
+
+They should be on the item with everything else, and they are not, because the
+item will not take them at the rate they are rendered. Every uploaded file
+queues an `archive.php` task and an item rations how many may be queued:
+
+```
+Please reduce your request rate. - bucket_tasks_queued exceeds rationed amount
+```
+
+Measured here: 34 tasks draining at roughly five a minute. That is half a day
+for the four thousand thumbnails already rendered and months for all 48,102 —
+the upload, not the rendering, becomes the thing that cannot finish. Bundling
+into a zip is the documented way out, and is how the North Korea explorer
+serves its screenshots, but a zip uploaded to this item returns 200 from S3 and
+then never appears, twice, with the task queue empty. **That is unexplained and
+is the thing to fix.**
+
+Pages will hold them in the meantime, up to a measured limit. Published sites
+"may be no larger than 1 GB" and these average 26 KB, so the ceiling arrives at
+roughly 40,000 of 48,102 — about 83% coverage. `publish_thumbs.py` stops at an
+820 MB budget rather than discovering the cap by being switched off.
+
+When the item will take a bundle, point `thumb_base` back and delete the
+folder; it is one field in `index.json`. If the budget runs out first,
+re-compress rather than re-render — the PDFs are not kept, so rendering again
+means pulling several thousand multi-megabyte files off Wayback a second time,
+and the JPEGs are already here.
 
 ## Publishing
 
 ```bash
-python3 build/upload_item.py --item letters-from-congress-data
-python3 build/build_site.py  --item letters-from-congress-data   # rewrite the base URLs
-git commit -am "point the page at the data item" && git push
+python3 build/publish_thumbs.py                                  # payload/thumbs -> thumbs/
+python3 build/upload_item.py --item letters-from-congress-data   # member data only now
+python3 build/build_site.py  --item letters-from-congress-data --thumb-base thumbs/
+git add -A && git commit -m "rebuild" && git push
 ```
 
-`build_site.py --item` writes `data_base` and `thumb_base` into `index.json`
-as `https://archive.org/download/<item>/…`. Without `--item` they stay as
-local `payload/` paths, which is what serves a checkout.
+`--item` writes `data_base` into `index.json` as
+`https://archive.org/download/<item>/…`; `--thumb-base` overrides where the
+page looks for pictures, independently. Without either, both stay as local
+`payload/` paths, which is what serves a checkout.
 
-The uploader skips files already on the item at the same size, so the run
-after another thousand thumbnails uploads only those thousand.
+The uploader skips files already on the item at the same size, and sends
+`member/*.json` and `search.json` before any thumbnail — a missing thumbnail is
+a gap in a wall, a missing member file is the wrong letters.
+
+Pages allows **10 builds an hour** from a branch, and every push is a build, so
+batch edits rather than pushing each one.
 
 Then: repository public under `internetarchivecanada`, Pages from the `main`
 branch root, and the explorer is at

@@ -88,6 +88,11 @@ def main() -> None:
     parser.add_argument("--item", default="",
                         help="archive.org item holding the payload; sets the "
                              "base URLs the published page fetches from")
+    parser.add_argument("--thumb-base", default="",
+                        help="override where the page fetches thumbnails, "
+                             "independently of --item: the item will not take "
+                             "them at the rate they are rendered, so they are "
+                             "served from thumbs/ in the repository for now")
     args = parser.parse_args()
 
     thumbs_dir = args.thumbs or (args.payload / "thumbs")
@@ -96,6 +101,13 @@ def main() -> None:
         data_base, thumb_base = base + "member/", base + "thumbs/"
     else:
         data_base, thumb_base = "payload/member/", "payload/thumbs/"
+    # The two halves of the payload are allowed to live in different places.
+    # Per-member data has to come from the item, because it is tens of
+    # megabytes and growing; the thumbnails cannot go there yet, because an
+    # item rations queued tasks and each file is one. See publish_thumbs.py.
+    if args.thumb_base:
+        thumb_base = args.thumb_base
+        thumbs_dir = args.thumbs or (root / thumb_base.strip("/"))
 
     # Dates the PDFs state about themselves, collected by the thumbnail pass.
     # Preferred over the Wayback capture and beaten only by a date the

@@ -957,8 +957,11 @@ function viewAbout() {
       turns up in a search for “letter” is a news item announcing that a letter
       was sent, or a download page that just forwards you to the file. Opening
       either one gets you the member’s website, not the letter. We took out
-      20,241 of those. Where a download page was the only copy we had, we
-      followed it through to the file behind it and kept that instead.`),
+      20,241 of those.`),
+    el('p', {}, `Some letters went with them. About 6,700 of those download
+      pages were the only copy we had, and we are working through them one at a
+      time, following each one to the file behind it and putting the letter
+      back. That is slow going, so the count above will rise.`),
     el('p', {}, `Only about ${named}% of files name who the letter went to. The rest just say
       what it was about, so those show no recipient.`),
     el('p', {}, `No newsletters — which takes some doing, since “newsletter”
