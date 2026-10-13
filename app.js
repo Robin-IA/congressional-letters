@@ -774,8 +774,11 @@ async function viewSearch(query) {
         ? el('div', { class: 'panel' },
           el('h3', {}, 'Try one of these'),
           el('div', { class: 'controls' },
+            // .pill, not .chip: these were already buttons and nobody could
+            // tell, because .chip is the label style used for topic tags.
             ...picks.map(t => el('button', {
-              class: 'chip', style: 'cursor:pointer;font-size:1.3rem;padding:.4rem .9rem',
+              class: 'pill', type: 'button',
+              title: `Search for ${t}`,
               onclick: () => runSearch(t),
             }, t))))
         : null,

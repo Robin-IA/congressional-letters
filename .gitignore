@@ -4,7 +4,7 @@ data/letters-parsed.jsonl
 data/members.json
 data/roster/
 data/pdfs/
-payload/
+payload/thumbs/
 __pycache__/
 data/wrapper-targets.jsonl
 data/wrapper-resolved.jsonl

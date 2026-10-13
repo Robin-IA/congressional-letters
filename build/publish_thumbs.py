@@ -44,10 +44,11 @@ import shutil
 import sys
 from pathlib import Path
 
-# Under the 1 GB Pages ceiling with room for the page, index.json and the
-# repository's own history. Not a tuning knob: the ceiling is a hard limit and
-# a site that breaches it may simply stop being served.
-DEFAULT_BUDGET_MB = 820
+# Under the 1 GB Pages ceiling with room for the page, index.json, the 22 MB of
+# per-member data now served from here too, and the repository's own history.
+# Not a tuning knob: the ceiling is a hard limit and a site that breaches it may
+# simply stop being served.
+DEFAULT_BUDGET_MB = 760
 
 
 def main() -> None:
