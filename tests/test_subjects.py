@@ -107,3 +107,54 @@ class NotDebris(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class Capitals(unittest.TestCase):
+    """Slugs are lower case throughout, so every subject arrived looking like
+    a file name. Title case with the abbreviations left as capitals reads as a
+    caption instead."""
+
+    def test_agency_abbreviations_shout(self):
+        self.assertEqual(
+            tidy_subject("odni doj fbi dhs nsa election security briefings"),
+            "ODNI DOJ FBI DHS NSA Election Security Briefings")
+
+    def test_names_are_capitalised(self):
+        self.assertEqual(tidy_subject("kash patel jtf october"),
+                         "Kash Patel JTF October")
+        self.assertEqual(tidy_subject("todd blanche nyc mayor office meeting"),
+                         "Todd Blanche NYC Mayor Office Meeting")
+
+    def test_two_letter_words_that_are_really_abbreviations(self):
+        # In letters from congressional offices "us" is the United States,
+        # "ag" the Attorney General, "va" Veterans Affairs, "un" the UN.
+        for given, want in (("ai safety framework", "AI Safety Framework"),
+                            ("un human rights council", "UN Human Rights Council"),
+                            ("va hospital wait times", "VA Hospital Wait Times"),
+                            ("ag garland oversight", "AG Garland Oversight"),
+                            ("us trade representative", "US Trade Representative")):
+            self.assertEqual(tidy_subject(given), want)
+
+    def test_matches_whole_tokens_only(self):
+        # "un" is the United Nations; "unavailable" is a word.
+        self.assertEqual(tidy_subject("unavailable records request"),
+                         "Unavailable Records Request")
+
+    def test_fiscal_year_and_state_code(self):
+        self.assertEqual(tidy_subject("fy23 liheap funds"), "FY23 LIHEAP Funds")
+        self.assertEqual(tidy_subject("mn wildfire funds"), "MN Wildfire Funds")
+
+
+class RunTogether(unittest.TestCase):
+    def test_splits_a_slug_with_no_separators(self):
+        self.assertEqual(tidy_subject("todojonmncivilrightsinvestigation"),
+                         "DOJ MN Civil Rights Investigation")
+
+    def test_leaves_long_words_alone(self):
+        # The reason splitting is deliberately hard to satisfy: most long
+        # tokens here are simply long words, and mangling those to rescue the
+        # handful of real run-togethers would be a bad trade.
+        for word in ("appropriations request", "infrastructure implementation",
+                     "transportation reauthorization", "accountability office",
+                     "reconciliation instructions"):
+            self.assertEqual(tidy_subject(word).lower(), word.lower(), word)

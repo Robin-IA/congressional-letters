@@ -40,8 +40,123 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from topics import tag as tag_topics  # noqa: E402
+from topics import AGENCIES, SUBJECTS, tag as tag_topics  # noqa: E402
 from thumbs import SUFFIX  # noqa: E402
+
+# Read as capitals, not as words. Agency abbreviations come from the topics
+# vocabulary so the two cannot drift; the rest are the ones this corpus
+# actually contains.
+#
+# The risky ones are the two-letter pairs that are also English words, and
+# they are here deliberately: in letters from congressional offices "us" is
+# the United States, "ag" is the Attorney General, "va" is Veterans Affairs
+# and "un" is the United Nations far more often than any of them is the word.
+# Matching is on a whole token, so "unavailable" is never touched — only a
+# standalone "un".
+ACRONYMS = set(AGENCIES) | {
+    "ODNI", "DNI", "NSA", "OIG", "IG", "AI", "UN", "US", "AG", "FY", "JTF",
+    "NYC", "ATF", "DEA", "TSA", "CISA", "GSA", "NRC", "FERC", "NTSB", "USCIS",
+    "SNAP", "LIHEAP", "PPP", "ACA", "BLM", "NPS", "USFS", "CBO", "CRS",
+    "FOIA", "NDAA", "USMCA", "WTO", "PBM", "PFAS", "COVID", "HUD", "SSI",
+    "SSDI", "CHIP", "GAO", "OMB", "EEOC", "FHFA", "FDIC", "NLRB", "USAID",
+    "ICE", "CBP", "DOD", "DOE", "DOT", "DHS", "DOJ", "FBI", "EPA", "FEMA",
+    "HHS", "CDC", "FDA", "VA", "IRS", "SEC", "FCC", "FTC", "FAA", "NIH",
+    "NOAA", "SBA", "USDA", "USPS", "SSA", "CMS", "NASA", "PACER", "ROTC",
+    "AFROTC", "STEM", "LNG", "EV", "AV", "UAV", "PBS", "NPR", "GI",
+}
+
+# Lower case inside a title, never at the front.
+MINOR = {"a", "an", "and", "as", "at", "but", "by", "for", "from", "in",
+         "into", "nor", "of", "on", "or", "over", "per", "the", "to", "up",
+         "via", "vs", "with"}
+
+
+def _split_vocabulary() -> set[str]:
+    """Words a run-together token may be broken into.
+
+    Taken from the topics vocabulary rather than written out again, plus the
+    connectives a file name uses and the state codes that turn up inside one.
+    """
+    words = {w for mapping in (SUBJECTS, AGENCIES) for forms in mapping.values()
+             for form in forms for w in form.split() if len(w) >= 2}
+    words |= {w.lower() for w in ACRONYMS}
+    words |= MINOR | STATE_PREFIX
+    words |= {
+        "letter", "letters", "support", "request", "requesting", "funding",
+        "funds", "oversight", "response", "report", "act", "bill", "committee",
+        "hearing", "program", "grant", "grants", "service", "services",
+        "department", "office", "director", "secretary", "administration",
+        "agency", "county", "city", "state", "federal", "national", "security",
+        "briefing", "briefings", "investigation", "investigations", "civil",
+        "rights", "right", "resignation", "nomination", "meeting", "mayor",
+        "price", "gouging", "shops", "stops", "massachusetts", "website",
+        "congressman", "congresswoman", "senator", "chairman", "members",
+    }
+    return words
+
+
+# Built on first use rather than at import: it draws on STATE_PREFIX and
+# STOPWORDS, which are defined further down beside the rest of the subject
+# tidying, and a module that only works if its constants happen to be in the
+# right order is a trap for the next edit.
+_SPLITTABLE: set[str] | None = None
+
+
+def splittable() -> set[str]:
+    global _SPLITTABLE
+    if _SPLITTABLE is None:
+        _SPLITTABLE = _split_vocabulary()
+    return _SPLITTABLE
+
+
+def split_run_together(token: str) -> list[str] | None:
+    """Break ``todojonmncivilrightsinvestigation`` into words, or give up.
+
+    All or nothing, and deliberately hard to satisfy. Most long tokens in this
+    corpus are simply long words — appropriations, infrastructure,
+    implementation, transportation — and mangling those to rescue the handful
+    of genuine run-togethers would be a bad trade. So: sixteen characters
+    before it is even considered, every piece has to be a known word, and it
+    has to come apart into at least three of them.
+    """
+    if len(token) < 16 or not token.isalpha():
+        return None
+    vocabulary = splittable()
+    lowered = token.lower()
+    pieces: list[str] = []
+    i = 0
+    while i < len(lowered):
+        for size in range(min(len(lowered) - i, 18), 1, -1):
+            candidate = lowered[i:i + size]
+            if candidate in vocabulary:
+                pieces.append(candidate)
+                i += size
+                break
+        else:
+            return None
+    return pieces if len(pieces) >= 3 else None
+
+
+FISCAL_YEAR = re.compile(r"^(fy)(\d{2,4})$", re.IGNORECASE)
+
+
+def recase(word: str) -> str:
+    bare = word.strip(".,;:()[]")
+    if bare.upper() in ACRONYMS:
+        return word.replace(bare, bare.upper())
+    # "fy23" is a fiscal year, and reads as one only in capitals.
+    match = FISCAL_YEAR.match(bare)
+    if match:
+        return word.replace(bare, "FY" + match.group(2))
+    # A state code that is a state and nothing else. STATE_PREFIX already
+    # excludes the ones that are words or agencies, which is why this can
+    # safely shout: MN, not Mn.
+    if bare.lower() in STATE_PREFIX:
+        return word.replace(bare, bare.upper())
+    if any(ch.isdigit() for ch in word):
+        # 301, h.r.1 — leave the shape alone beyond the first letter.
+        return word[0].upper() + word[1:] if word[0].isalpha() else word
+    return word[:1].upper() + word[1:]
 
 COLUMNS = ["key", "timestamp", "kind", "date", "precision", "recipient",
            "subject", "topics", "cosigners", "digest"]
@@ -113,7 +228,14 @@ def tidy_subject(subject: str | None) -> str | None:
     for pattern in SCRUB:
         text = pattern.sub(" ", text)
 
-    words = [w for w in re.split(r"\s+", text) if w]
+    words: list[str] = []
+    for word in re.split(r"\s+", text):
+        if not word:
+            continue
+        # "todojonmncivilrightsinvestigation" is seven words with the spaces
+        # left out. Most long tokens are not — see split_run_together.
+        words.extend(split_run_together(word) or [word])
+
     # Only from the front, and only when something is left to read.
     if len(words) > 1 and words[0].lower() in STATE_PREFIX:
         words = words[1:]
@@ -123,11 +245,19 @@ def tidy_subject(subject: str | None) -> str | None:
     # "529 4350". Better to show nothing than to show that.
     if not kept or not re.search(r"[a-z]{2}", " ".join(kept), re.IGNORECASE):
         return None
-    text = " ".join(kept)
-    # Slugs are lower case; sentence case reads as a description rather than
-    # as a filename, which is what this is being presented as.
-    text = text[0].upper() + text[1:]
-    return text[:140]
+
+    # Slugs are lower case throughout, so "kash patel jtf october" arrives
+    # looking like a file name rather than a description of anything. Title
+    # case with the agency abbreviations left as capitals reads as a caption:
+    # "Kash Patel JTF October".
+    out = []
+    for index, word in enumerate(kept):
+        lowered = word.lower()
+        if index and lowered in MINOR and lowered.upper() not in ACRONYMS:
+            out.append(lowered)
+        else:
+            out.append(recase(word))
+    return " ".join(out)[:140]
 
 
 def main() -> None:
