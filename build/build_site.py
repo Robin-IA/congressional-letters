@@ -138,6 +138,7 @@ def main() -> None:
     per_member_recipients: dict[str, Counter] = defaultdict(Counter)
     per_member_years: dict[str, Counter] = defaultdict(Counter)
     total = 0
+    thumbed = 0
 
     with args.parsed.open(encoding="utf-8") as handle:
         for line in handle:
@@ -169,14 +170,28 @@ def main() -> None:
             # The capture digest is the content address of the letter, and
             # also the thumbnail's filename. Identical letters captured many
             # times share one digest, so they share one rendering.
-            has_thumb = bool(digest) and (thumbs_dir / f"{digest}.jpg").exists()
+            #
+            # WRITTEN WHETHER OR NOT THE PICTURE EXISTS YET. It used to be
+            # blanked when the file was missing, which made every member file
+            # depend on how far the renderer had got — so each rebuild changed
+            # all 514 of them and each one had to be pushed to the item again,
+            # at the five files a minute the item will accept. The renderer
+            # produces a few hundred an hour, so that loop could never keep up
+            # with itself.
+            #
+            # The page asks for the picture and shows the placeholder if it is
+            # not there. Thumbnails are lazy, so a letter nobody scrolls to
+            # costs nothing, and a thumbnail published to the repository shows
+            # up without the member data being touched at all.
+            if bool(digest) and (thumbs_dir / f"{digest}.jpg").exists():
+                thumbed += 1
 
             by_member[bioguide].append([
                 record["key"], record["timestamp"], kind, best,
                 precision, recipient, subject,
                 ",".join(tag_topics(f"{subject or ''} {recipient or ''}")),
                 ",".join(record.get("cosigners") or []),
-                digest if has_thumb else "",
+                digest,
             ])
 
             if recipient:
@@ -321,8 +336,10 @@ def main() -> None:
         # this by summing the 200 recipients it is shown, which is most of them
         # but not all, and it reported 36% where the real figure is 46%.
         "with_recipient": sum(recipients.values()),
-        "thumbs": sum(1 for rows in by_member.values()
-                      for row in rows if row[9]),
+        # Letters a visitor would actually see a picture for. Counted against
+        # the rendered files, not against the digest column, which is now
+        # written whether the picture exists or not.
+        "thumbs": thumbed,
         # Where the browser fetches the bulk data from. Relative paths serve
         # a local checkout; --item rewrites both to an archive.org download
         # URL for the published page.

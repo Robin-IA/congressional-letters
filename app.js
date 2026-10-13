@@ -246,8 +246,21 @@ function shot(row) {
     title: get(row, 'key'),
   },
     el('span', { class: 'frame' },
+      // Asked for whether or not it has been rendered yet, and replaced by the
+      // placeholder if it is not there. The alternative was for the build to
+      // record which pictures exist, which tied every member file to the
+      // renderer's progress and meant re-uploading all 514 of them to the item
+      // after every build — at the five files a minute the item accepts, a
+      // loop that could not keep up with the renderer feeding it.
+      //
+      // Images are lazy, so a letter nobody scrolls to never asks, and the
+      // misses shrink as coverage grows.
       src
-        ? el('img', { src, loading: 'lazy', alt: '', width: 170, height: 220 })
+        ? el('img', {
+          src, loading: 'lazy', alt: '', width: 170, height: 220,
+          onerror: event => event.target.replaceWith(
+            el('span', { class: 'none' }, 'Preview coming soon')),
+        })
         // Every letter here is a document now, so the old "Press release"
         // fallback labelled nothing that exists — the handful of non-pdf rows
         // are letters whose web server gave them the wrong content type.
