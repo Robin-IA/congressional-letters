@@ -133,8 +133,16 @@ table.letters th { font-size: 1.1rem; color: var(--muted); text-transform: upper
 table.letters tr:hover td { background: #fafbff; }
 table.letters .wh { width: 8.5rem; font-variant-numeric: tabular-nums; color: var(--muted); white-space: nowrap; }
 table.letters .who { width: 15rem; }
-table.letters .sub2 { min-width: 20rem; }
-table.letters td:last-child { width: 6rem; white-space: nowrap; }
+/* "Read it" belongs beside the letter it opens, and it was sitting at the far
+   right of the screen across a lake of whitespace: the table was full width
+   and the subject column absorbed every pixel of slack, so the wider the
+   display the further the link drifted from the thing it referred to.
+   Sizing to content keeps them together. The cap stops a long subject running
+   the entire width of a wide monitor, which is hard to read anyway, and the
+   last column hugs its text rather than reserving a fixed 6rem. */
+table.letters { width: auto; max-width: 100%; }
+table.letters .sub2 { min-width: 20rem; max-width: 52rem; }
+table.letters td:last-child, table.letters th:last-child { width: 1%; white-space: nowrap; padding-left: 1.4rem; }
 
 .bars { display: flex; align-items: flex-end; gap: 1px; height: 11rem; margin: 1rem 0 .3rem; }
 .bars button { flex: 1; background: var(--active); opacity: .45; min-height: 1px; border-radius: 1px 1px 0 0; }
