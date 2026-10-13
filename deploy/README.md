@@ -15,7 +15,7 @@ viewer puts it, no server and no build.
 | --- | --- | --- |
 | `index.html`, `app.js` | the repository, at the root | Pages serves from root, as etd-viewer does |
 | `index.json` | the repository, ~160 KB | members, counts, facets, year histogram — so the page paints at once |
-| `payload/member/<id>.json` | an archive.org item | ~20 MB across 511 files, fetched one member at a time |
+| `payload/member/<id>.json` | an archive.org item | ~15 MB across 514 files, fetched one member at a time |
 | `payload/thumbs/<digest>.jpg` | an archive.org item | ~1.3 GB when the renderer finishes |
 
 `payload/` is gitignored. 1.3 GB does not belong in a Pages repository, which

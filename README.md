@@ -36,6 +36,36 @@ returned zero captures for `warren.senate.gov` and `grassley.senate.gov`: it
 archives political campaigns and `senate.gov`'s own homepage, not official
 member sites.
 
+## Every letter here opens as a letter
+
+That is the rule the corpus is cut to, and it costs 22.6% of what the index
+appears to offer. A URL containing "letter" is not the letter twice over:
+
+**The announcement page.** `/oversight/letters/warren-questions-federal-student-
+aid-chief-…`, `/statements/…`, `/media/in-the-news/…` — a press release wearing
+the word. 7,220 of them, and none is a letter.
+
+**The download wrapper.** The Senate CMS links a page, not a file, and the page
+meta-refreshes to the file two seconds later:
+
+```
+GET /download/20181109-letter-to-commerce-daeo-re-ross-conflict-of-interest
+    x-archive-orig-refresh: 2; url=//…-of-interest&download=1
+```
+
+What the crawler archived is the interstitial. Replay it and you get the
+member's page furniture and no letter — which is how some of Elizabeth Warren's
+letters came to open to nothing. 13,708 of these; 6,997 we already hold as a
+PDF at the real URL.
+
+`build/resolve_wrappers.py` recovers the remainder, chasing `&download=1` to
+whatever finally has a body and believing only its first five bytes. CDX cannot
+answer this: Cantwell's site serves the PDF at that URL under a `text/html`
+content-type, so in the index the file and the interstitial look identical.
+Having the payload settles the digest too, so the thumbnail and the PDF's own
+stated date come out of the same download rather than costing the host a second
+one.
+
 ## Why the filename is the description
 
 Of 21 letter PDFs fetched and tested, five yielded extractable text — about a
@@ -129,7 +159,7 @@ bulk of the data in an archive.org item the browser reads directly — item
 downloads carry `Access-Control-Allow-Origin: *`, so no server is involved.
 
 `index.json` (~160 KB) sits in the repository so the page paints immediately.
-`payload/` — 511 per-member files and the rendered first pages — is gitignored
+`payload/` — 514 per-member files and the rendered first pages — is gitignored
 and uploaded with `build/upload_item.py`. See [deploy/README.md](deploy/README.md).
 
 ## Rebuilding
