@@ -104,11 +104,21 @@ def main() -> None:
                              "tasks, so this is not about bytes")
     parser.add_argument("--pause", type=float, default=5.0,
                         help="seconds between batches")
+    parser.add_argument("--skip", action="append", default=[],
+                        help="skip payload paths starting with this; "
+                             "`--skip thumbs/` while Pages serves the pictures "
+                             "and the item rations queued tasks")
     args = parser.parse_args()
 
     import internetarchive as ia
 
     wanted = plan(args.payload)
+    if args.skip:
+        before = len(wanted)
+        wanted = [(name, path) for name, path in wanted
+                  if not any(name.startswith(prefix) for prefix in args.skip)]
+        print(f"  skipping {before - len(wanted):,} files under "
+              f"{', '.join(args.skip)}", file=sys.stderr)
     if not wanted:
         raise SystemExit(f"nothing to upload under {args.payload}")
 
