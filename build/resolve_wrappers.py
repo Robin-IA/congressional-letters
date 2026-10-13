@@ -80,6 +80,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from harvest import UA, canonical, letter_depth, read_cache  # noqa: E402
+from thumbs import SUFFIX  # noqa: E402
 
 TIMEOUT = 120
 
@@ -320,7 +321,7 @@ def harvest_bytes(answer: dict, thumbs: Path, dates: Path) -> None:
                         {"digest": digest, "date": found}) + chr(10))
     except Exception:  # noqa: BLE001
         pass
-    out_path = thumbs / f"{digest}.jpg"
+    out_path = thumbs / f"{digest}{SUFFIX}"
     if out_path.exists():
         return
     try:
@@ -465,7 +466,7 @@ def main() -> None:
     for label, count in stats.most_common():
         if label != "recovered":
             print(f"    {label:>22}: {count:,}", file=sys.stderr)
-    rendered = len(list(args.thumbs.glob("*.jpg")))
+    rendered = len(list(args.thumbs.glob(f"*{SUFFIX}")))
     print(f"  {rendered:,} thumbnails on disk", file=sys.stderr)
 
 

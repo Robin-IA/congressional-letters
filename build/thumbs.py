@@ -64,6 +64,29 @@ TIMEOUT = 120
 MAX_BYTES = 40 * 1024 * 1024      # a letter is not 40 MB; something else is
 WIDTH = 340                        # rendered thumbnail width in pixels
 
+# WebP, and the reason is arithmetic rather than fashion. Four files build a
+# thumbnail's filename, so the format lives here and they import it.
+#
+# At 23.6 KB average, 48,113 distinct documents come to 1,111 MB — and a
+# GitHub Pages site "may be no larger than 1 GB", of which 20 MB is already
+# the page and the per-member data. The whole corpus did not fit.
+#
+# Measured on 200 real thumbnails, re-encoding each one from what is already
+# on disk:
+#
+#     jpeg q65    22.3 KB   1,046 MB      webp q72   18.6 KB    872 MB
+#     jpeg q58    20.7 KB     973 MB      webp q65   17.5 KB    821 MB
+#     jpeg q50    18.6 KB     876 MB      webp q58   16.5 KB    777 MB
+#
+# WebP at quality 72 is the same size as JPEG at quality 50 while still being
+# quality 72: 21% smaller than now with no drop in the setting, which puts the
+# entire corpus inside the ceiling with 130 MB to spare. Checked by eye at 2x
+# zoom on a dense letterhead against the original and against jpeg q50 — the
+# WebP is indistinguishable from the original, which matters because being able
+# to read the letterhead is the whole argument for showing these at all.
+SUFFIX = ".webp"
+QUALITY = 72
+
 _print_lock = threading.Lock()
 _dates_lock = threading.Lock()
 
@@ -124,7 +147,7 @@ def render(blob: bytes, out_path: Path) -> None:
         # size one come out the same number of pixels across.
         scale = WIDTH / max(1.0, page.get_width())
         image = page.render(scale=min(scale, 3.0)).to_pil()
-        image.convert("RGB").save(out_path, "JPEG", quality=72, optimize=True)
+        image.convert("RGB").save(out_path, "WEBP", quality=QUALITY, method=4)
     finally:
         document.close()
 
@@ -134,7 +157,7 @@ def one(record: dict, thumbs: Path, pause: float, retries: int,
     digest = record.get("digest") or ""
     if not digest:
         return "no-digest"
-    out_path = thumbs / f"{digest}.jpg"
+    out_path = thumbs / f"{digest}{SUFFIX}"
     if out_path.exists():
         return "cached"
 
@@ -223,7 +246,7 @@ def main() -> None:
             jobs.append(record)
 
     pending = [j for j in jobs
-               if not (args.thumbs / f"{j['digest']}.jpg").exists()]
+               if not (args.thumbs / f"{j['digest']}{SUFFIX}").exists()]
     print(f"{len(jobs):,} distinct PDFs, {len(pending):,} still to render",
           file=sys.stderr)
 
@@ -263,7 +286,7 @@ def main() -> None:
 
     done_per_member: Counter = Counter()
     for job in jobs:
-        if (args.thumbs / f"{job['digest']}.jpg").exists():
+        if (args.thumbs / f"{job['digest']}{SUFFIX}").exists():
             done_per_member[job["bioguide"]] += 1
     bare = sum(1 for bioguide in members_seen if not done_per_member[bioguide])
     print(f"  {len(members_seen):,} members with a PDF to render; "
@@ -298,8 +321,8 @@ def main() -> None:
     print(file=sys.stderr)
     for outcome, count in outcomes.most_common():
         print(f"  {outcome:>16}: {count:,}", file=sys.stderr)
-    total = len(list(args.thumbs.glob("*.jpg")))
-    size = sum(p.stat().st_size for p in args.thumbs.glob("*.jpg"))
+    total = len(list(args.thumbs.glob(f"*{SUFFIX}")))
+    size = sum(p.stat().st_size for p in args.thumbs.glob(f"*{SUFFIX}"))
     print(f"\n{total:,} thumbnails, {size / 1024 / 1024:.0f} MB",
           file=sys.stderr)
 

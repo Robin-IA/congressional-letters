@@ -14,7 +14,7 @@ arrangement work, and it is why the ETD viewer can say "no server, no build".
                                  so the page paints immediately.
     payload/member/<id>.json     IN AN ARCHIVE.ORG ITEM. One member's letters,
                                  fetched when that member is opened. ~21 MB.
-    payload/thumbs/<digest>.jpg  IN AN ARCHIVE.ORG ITEM. Rendered first pages,
+    thumbs/<digest>.webp         IN THE REPO for now. Rendered first pages,
                                  ~1.3 GB when complete.
 
 ``payload/`` is gitignored and uploaded by ``build/upload_item.py``. Keeping
@@ -41,6 +41,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from topics import tag as tag_topics  # noqa: E402
+from thumbs import SUFFIX  # noqa: E402
 
 COLUMNS = ["key", "timestamp", "kind", "date", "precision", "recipient",
            "subject", "topics", "cosigners", "digest"]
@@ -52,13 +53,75 @@ STOPWORDS = {
     "in", "at", "by", "re", "fw", "cc", "v1", "v2", "draft", "attachment",
 }
 
+# Debris a file name carries that a reader has no use for. The example that
+# started this was
+#
+#     Mn liheap funds version 04 50 pm
+#
+# where the only words that mean anything are "liheap funds" — LIHEAP being
+# the Low Income Home Energy Assistance Program, which is exactly what the
+# letter is about. "version 04 50 pm" is the moment somebody pressed save.
+#
+# Every pattern here was counted against the corpus before it was added, and
+# the ones that looked obvious and were not are recorded below.
+SCRUB = (
+    # One office's document system stamps its own id on the front:
+    # "Quill l19597 uccs afrotc". 277 of them. The bare word is left alone —
+    # Quill Corp v. North Dakota is a real subject for a letter about tax.
+    re.compile(r"\bquill\s+l\s*\d+\b", re.I),
+    # "version 03 47 pm", "version #2 10 50 am": 469 subjects carried one.
+    #
+    # THE CLOCK GOES FIRST. With the version pattern ahead of it, its trailing
+    # \d* ate the hour — "version 04" — and left "50 pm" behind, so
+    # "Mn liheap funds version 04 50 pm" tidied to "Liheap funds 50", which is
+    # worse than what it started with.
+    re.compile(r"\b\d{1,2}[ .:]\d{2}\s*(?:am|pm)\b", re.I),
+    re.compile(r"\bversion\s*#?\s*\d*", re.I),
+    re.compile(r"\b(?:am|pm)\b", re.I),
+    # A long bare run of digits on the end is an id, not a subject:
+    # "Cjs nasa update 0418071". Five or more, so "Section 301" survives.
+    re.compile(r"\s\d{5,}\s*$"),
+    # A date on the end, which the letter's own date column already shows:
+    # "Rural health march 30 2020", "Energy june 2020".
+    re.compile(r"\b(?:jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*"
+               r"\s*\d{0,2}\s*,?\s*(?:19|20)\d{2}\s*$", re.I),
+    re.compile(r"\s(?:19|20)\d{2}\s*$"),
+)
+
+# Two-letter state codes safe to drop from the front of a subject, because the
+# office filed the letter under its own state and the reader is already on that
+# member's page.
+#
+# NOT A LIST OF STATES. The leading two-letter token is usually meaningful:
+# across 2,588 subjects that have one, the commonest are Ig (inspector
+# general), Us, Fy, Ai, Un, Va, Ag, Co and No. VA is Veterans Affairs far more
+# often than Virginia, MA and CA and IN and ME and OK and PA and LA and DE and
+# OR read as words or agencies, and stripping any of them loses the subject.
+# So this holds only the codes that are a state and nothing else.
+STATE_PREFIX = {
+    "ak", "al", "ar", "az", "ct", "fl", "ga", "ia", "id", "il", "ks", "ky",
+    "md", "mi", "mn", "mo", "ms", "mt", "nc", "nd", "ne", "nh", "nj", "nm",
+    "nv", "ny", "oh", "ri", "sc", "sd", "tn", "tx", "ut", "vt", "wa", "wi",
+    "wv", "wy",
+}
+
 
 def tidy_subject(subject: str | None) -> str | None:
     if not subject:
         return None
-    words = [w for w in re.split(r"\s+", subject) if w]
+    text = subject
+    for pattern in SCRUB:
+        text = pattern.sub(" ", text)
+
+    words = [w for w in re.split(r"\s+", text) if w]
+    # Only from the front, and only when something is left to read.
+    if len(words) > 1 and words[0].lower() in STATE_PREFIX:
+        words = words[1:]
+
     kept = [w for w in words if w.lower() not in STOPWORDS and len(w) > 1]
-    if not kept:
+    # A subject with no letters in it is a fragment of a file name: "7460",
+    # "529 4350". Better to show nothing than to show that.
+    if not kept or not re.search(r"[a-z]{2}", " ".join(kept), re.IGNORECASE):
         return None
     text = " ".join(kept)
     # Slugs are lower case; sentence case reads as a description rather than
@@ -183,7 +246,7 @@ def main() -> None:
             # not there. Thumbnails are lazy, so a letter nobody scrolls to
             # costs nothing, and a thumbnail published to the repository shows
             # up without the member data being touched at all.
-            if bool(digest) and (thumbs_dir / f"{digest}.jpg").exists():
+            if bool(digest) and (thumbs_dir / f"{digest}{SUFFIX}").exists():
                 thumbed += 1
 
             by_member[bioguide].append([
@@ -392,11 +455,11 @@ def main() -> None:
     per_member_bytes = sum(p.stat().st_size for p in out_member.glob("*.json"))
     print(f"  index.json      {size / 1024:>8,.0f} KB   (in the repo)",
           file=sys.stderr)
-    thumb_bytes = sum(p.stat().st_size for p in thumbs_dir.glob("*.jpg"))         if thumbs_dir.exists() else 0
+    thumb_bytes = sum(p.stat().st_size for p in thumbs_dir.glob(f"*{SUFFIX}"))         if thumbs_dir.exists() else 0
     print(f"  member/*.json   {per_member_bytes / 1024:>8,.0f} KB "
           f"across {len(list(out_member.glob('*.json')))} files   (payload)",
           file=sys.stderr)
-    print(f"  thumbs/*.jpg    {thumb_bytes / 1024:>8,.0f} KB   (payload)",
+    print(f"  thumbs/*{SUFFIX}  {thumb_bytes / 1024:>8,.0f} KB   (payload)",
           file=sys.stderr)
     print(f"  page fetches payload from: {data_base}", file=sys.stderr)
     print(f"\n{total:,} letters, "

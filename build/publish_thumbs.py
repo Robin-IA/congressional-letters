@@ -44,11 +44,26 @@ import shutil
 import sys
 from pathlib import Path
 
-# Under the 1 GB Pages ceiling with room for the page, index.json, the 22 MB of
-# per-member data now served from here too, and the repository's own history.
-# Not a tuning knob: the ceiling is a hard limit and a site that breaches it may
-# simply stop being served.
-DEFAULT_BUDGET_MB = 760
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+
+from thumbs import SUFFIX  # noqa: E402
+
+# Measured, not guessed. Everything this site publishes that is not a
+# thumbnail — the page, index.json, the per-member data, the search index, the
+# build scripts and the docs — comes to 20.4 MB, which leaves 1,004 MB of the
+# 1 GB Pages ceiling. 940 keeps a 64 MB margin.
+#
+# The first version of this guessed 820 and then 760 on an assumed 26 KB
+# average. The real average is 23.6 KB, so the earlier budget was giving away
+# about 12,000 thumbnails for nothing: 940 MB holds roughly 41,000 of the
+# 48,113 distinct documents, which is most of the corpus rather than two
+# thirds of it.
+#
+# Not a tuning knob beyond that. The ceiling is a hard limit — published sites
+# "may be no larger than 1 GB" — and a site that breaches it may simply stop
+# being served, so the margin is there to absorb the data growing, not to be
+# spent on more pictures.
+DEFAULT_BUDGET_MB = 940
 
 
 def main() -> None:
@@ -67,9 +82,9 @@ def main() -> None:
         raise SystemExit(f"nothing rendered yet at {args.source}")
     args.out.mkdir(parents=True, exist_ok=True)
 
-    have = {path.name for path in args.out.glob("*.jpg")}
-    carried = sum(path.stat().st_size for path in args.out.glob("*.jpg"))
-    source = sorted(args.source.glob("*.jpg"))
+    have = {path.name for path in args.out.glob(f"*{SUFFIX}")}
+    carried = sum(path.stat().st_size for path in args.out.glob(f"*{SUFFIX}"))
+    source = sorted(args.source.glob(f"*{SUFFIX}"))
 
     budget = args.budget_mb * 1024 * 1024
     copied = skipped = 0

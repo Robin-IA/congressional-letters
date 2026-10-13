@@ -65,7 +65,10 @@ const waybackUrl = row =>
 
 const thumbUrl = row => {
   const digest = get(row, 'digest');
-  return digest ? `${INDEX.thumb_base || './payload/thumbs/'}${digest}.jpg` : null;
+  // WebP: same quality setting as the JPEGs it replaced and 21% smaller,
+  // which is the difference between fitting two thirds of the corpus inside
+  // the 1 GB Pages ceiling and fitting all of it.
+  return digest ? `${INDEX.thumb_base || './payload/thumbs/'}${digest}.webp` : null;
 };
 
 // A date the slug stated, versus one inferred from when Wayback saw the file.
