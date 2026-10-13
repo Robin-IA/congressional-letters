@@ -152,10 +152,19 @@ function link(paramsObj, cls, ...kids) {
 // The corpus-wide search index, fetched once. Before this existed, search
 // could only see members the visitor had already opened — so from a cold load
 // it found nothing, which is not a search.
+// Every build rewrites the per-member files and search.json, and they are
+// served from an archive.org item behind a CDN. Fetched by bare name the
+// browser kept being handed the previous build's copy — Grassley's first four
+// letters had thumbnails in the file the item was serving and none in the file
+// the page received, so the wall showed "preview coming soon" over pictures
+// that existed. The stamp changes when the files do, which busts the cache on
+// a rebuild and lets everything be cached hard in between.
+const v = () => `?v=${INDEX.stamp || INDEX.built || ''}`;
+
 async function loadSearch() {
   if (SEARCH) return SEARCH;
   if (!searchLoading) {
-    searchLoading = fetch(INDEX.search_url || 'payload/search.json')
+    searchLoading = fetch((INDEX.search_url || 'payload/search.json') + v())
       .then(r => (r.ok ? r.json() : Promise.reject(new Error(`HTTP ${r.status}`))))
       .then(d => { SEARCH = d; return d; })
       .catch(err => { SEARCH = { failed: String(err.message || err) }; return SEARCH; });
@@ -165,7 +174,7 @@ async function loadSearch() {
 
 async function lettersOf(bioguide) {
   if (memberCache.has(bioguide)) return memberCache.get(bioguide);
-  const response = await fetch(`${DATA_BASE}${bioguide}.json`);
+  const response = await fetch(`${DATA_BASE}${bioguide}.json${v()}`);
   const rows = response.ok ? await response.json() : [];
   memberCache.set(bioguide, rows);
   return rows;
@@ -239,8 +248,10 @@ function shot(row) {
     el('span', { class: 'frame' },
       src
         ? el('img', { src, loading: 'lazy', alt: '', width: 170, height: 220 })
-        : el('span', { class: 'none' },
-          get(row, 'kind') === 'pdf' ? 'Preview coming soon' : 'Press release')),
+        // Every letter here is a document now, so the old "Press release"
+        // fallback labelled nothing that exists — the handful of non-pdf rows
+        // are letters whose web server gave them the wrong content type.
+        : el('span', { class: 'none' }, 'Preview coming soon')),
     el('span', { class: 'cap' }, caption),
     (() => { const t = topicTags(row); return t && t.length ? el('span', { class: 'topics' }, t) : null; })(),
     el('span', { class: 'when' }, when(row),

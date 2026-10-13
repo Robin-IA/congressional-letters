@@ -35,7 +35,7 @@ import json
 import re
 import sys
 from collections import Counter, defaultdict
-from datetime import date as date_type
+from datetime import date as date_type, datetime
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
@@ -294,6 +294,14 @@ def main() -> None:
 
     index = {
         "built": date_type.today().isoformat(),
+        # A cache key for the files this build also rewrote. The per-member
+        # files live on an archive.org item behind a CDN and the page fetched
+        # them by bare name, so after a rebuild the browser went on being
+        # handed the previous copy: Chuck Grassley's first four letters had
+        # thumbnails in the file the item was serving and none in the file the
+        # page received. Seconds, not days — several builds can land in an
+        # afternoon, and two of them did.
+        "stamp": datetime.now().strftime("%Y%m%d%H%M%S"),
         "columns": COLUMNS,
         "letters": total,
         "members_with_letters": sum(1 for m in index_members if m["letters"]),
