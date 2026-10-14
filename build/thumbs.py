@@ -73,6 +73,11 @@ UA = {"User-Agent": "ia-congressional-member-letters/0.1 "
 CDX = "https://web.archive.org/cdx/search/cdx"
 TIMEOUT = 120
 MAX_BYTES = 40 * 1024 * 1024      # a letter is not 40 MB; something else is
+
+# Payload sizes that mean a crawler stopped early rather than a file ending.
+# 64,000 is the one this corpus actually hits; the others are the usual caps
+# and cost nothing to watch for.
+TRUNCATED_AT = {64000, 65536, 51200, 102400, 100000, 1000000}
 WIDTH = 340                        # rendered thumbnail width in pixels
 
 # WebP, and the reason is arithmetic rather than fashion. Four files build a
@@ -249,6 +254,18 @@ def one(record: dict, thumbs: Path, pause: float, retries: int,
             bad = None
             if not blob.startswith(b"%PDF"):
                 bad = "not-pdf"
+            elif len(blob) in TRUNCATED_AT:
+                # Exactly 64,000 bytes, over and over, is not a coincidence:
+                # it is a crawler's byte cap, and what is stored is the first
+                # 64 KB of a PDF. The header is perfect and the document is
+                # not there. Every one of the first twenty letters written to
+                # the text file came back at exactly this size with zero
+                # extractable characters.
+                #
+                # It cannot be seen before fetching: CDX's length field is the
+                # WARC record size, and not one row in the corpus reports
+                # 64000. Only the payload shows it.
+                bad = "truncated-by-the-crawl"
             else:
                 try:
                     render(blob, staged)
