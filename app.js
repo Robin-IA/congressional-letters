@@ -615,16 +615,59 @@ function viewRecipients() {
 }
 
 async function viewRecipient(name) {
-  // The index says which members wrote to whom; their letters have to be
-  // fetched to list them. Only members whose top recipients include this one
-  // are loaded, which keeps a recipient page to a handful of requests.
-  const candidates = MEMBERS.filter(m => m.top.includes(name));
+  // WHICH MEMBERS WROTE TO THIS RECIPIENT — asked of the search index, not
+  // guessed from the member cards.
+  //
+  // This used to keep only members with this recipient in their top three:
+  //
+  //     MEMBERS.filter(m => m.top.includes(name))
+  //
+  // which is right for the handful of correspondents everyone writes to and
+  // wrong for everyone else. 107 of the 200 recipients on the recipients page
+  // had no member with them in a top three at all, so the page announced
+  // "37 letters in total" and then listed none of them. Amazon, Google, the
+  // Army, the Federal Election Commission, the Office of the Inspector
+  // General — over half the page led somewhere empty.
+  //
+  // search.json already carries a recipient for every letter, so it can
+  // answer the question exactly. It is one fetch, cached after the first.
+  const search = await loadSearch();
+  let counts = new Map();          // bioguide -> letters to this recipient
+  if (search && !search.failed && Array.isArray(search.recipients)) {
+    const slot = search.recipients.indexOf(name);
+    if (slot >= 0) {
+      for (const row of search.rows) {
+        if (row[1] !== slot) continue;
+        const id = search.members[row[0]];
+        counts.set(id, (counts.get(id) || 0) + 1);
+      }
+    }
+  }
+
+  // The totals index holds only the 200 commonest recipients, so for anything
+  // rarer it reports nothing. The search index knows them all.
+  const fromIndex = (INDEX.recipients || []).find(([n]) => n === name)?.[1] ?? 0;
+  const fromSearch = [...counts.values()].reduce((sum, n) => sum + n, 0);
+  const indexCount = fromIndex || fromSearch;
+
+  // Busiest first, and bounded: "The President" is 289 members, and a page
+  // that fetches 289 files before it draws anything is its own kind of broken.
+  const RECIPIENT_MEMBERS = 40;
+  let ids = [...counts.entries()].sort((a, b) => b[1] - a[1]).map(([id]) => id);
+  const withheld = Math.max(0, ids.length - RECIPIENT_MEMBERS);
+  ids = ids.slice(0, RECIPIENT_MEMBERS);
+
+  // If search could not be loaded at all, fall back to the old behaviour
+  // rather than showing nothing.
+  const candidates = ids.length
+    ? ids.map(id => byId.get(id)).filter(Boolean)
+    : MEMBERS.filter(m => m.top.includes(name));
+
   const loaded = await Promise.all(candidates.map(async m =>
     [m, (await lettersOf(m.id)).filter(r => get(r, 'recipient') === name)]));
   const pairs = loaded.filter(([, rows]) => rows.length)
     .sort((a, b) => b[1].length - a[1].length);
   const total = pairs.reduce((sum, [, rows]) => sum + rows.length, 0);
-  const indexCount = (INDEX.recipients || []).find(([n]) => n === name)?.[1] ?? 0;
 
   return el('div', {},
     link({ view: 'recipients' }, 'back', '← All recipients'),
@@ -636,17 +679,20 @@ async function viewRecipient(name) {
         el('div', {}, el('span', { class: 'v tab' }, num(pairs.length)),
           el('span', { class: 'k' }, 'Members shown')),
       )),
-    total < indexCount
+    withheld
       ? el('p', { class: 'note' },
-        `Showing ${num(total)} of ${num(indexCount)} letters — those from members for `
-        + 'whom this is a top-three recipient. The rest are on their own pages.')
+        `${num(withheld)} more members also wrote to ${name}. The busiest `
+        + `${RECIPIENT_MEMBERS} are shown here; the rest are on their own pages.`)
       : null,
     pairs.length
       ? el('div', {}, ...pairs.map(([m, rows]) =>
         el('div', { class: 'panel' },
           el('h3', {}, link({ member: m.id }, null, m.name), ` · ${num(rows.length)}`),
           el('div', { class: 'wall' }, ...rows.slice(0, 12).map(shot)))))
-      : el('div', { class: 'empty' }, 'No letters loaded for this recipient.'));
+      : el('div', { class: 'empty' },
+        total === 0 && indexCount > 0
+          ? 'Could not load the letters for this recipient — try reloading.'
+          : 'No letters loaded for this recipient.'));
 }
 
 function viewTimeline() {
