@@ -68,10 +68,23 @@ one.
 
 ## Why the filename is the description
 
-Of 21 letter PDFs fetched and tested, five yielded extractable text — about a
-quarter. The rest are scans of the signed original, which is what a letter is.
-The document therefore cannot be read by a machine without OCR, and the URL has
-to carry the meaning instead.
+The description beside each letter is cut from the file name, because that is
+what the harvest gives you for nothing: a URL per letter and no text.
+
+**An earlier version of this section was wrong and is worth correcting in
+public.** It said that about a quarter of these PDFs carry extractable text,
+on the evidence of 21 fetched by hand. Re-measured on 50 drawn at random, one
+request at a time so nothing was competing for the server: 48 served a valid
+PDF and **31 of those 48 — 65% — carry a usable text layer**, median 2,852
+characters over the first four pages. The first sample was too small and said
+the opposite of what is true.
+
+So the filename is where the description comes from today, and that is a
+choice about cost rather than a fact about the documents. Two thirds of this
+corpus could be searched by its contents, and the thumbnail pass is already
+downloading every one of these files, so the text can be taken out of bytes
+that have already been paid for. What it does not yet have is an index a
+static page can search — see the note at the end.
 
 It is good at it, because the people publishing these files named them for
 people:
@@ -94,7 +107,7 @@ Wheeler ran both the EPA and the FCC — is left unresolved rather than guessed.
 
 ## The thumbnails are the point
 
-Because three quarters of these are scans, the first page rendered at 24 KB
+Even where the text can be extracted, the first page rendered at 24 KB
 shows the letterhead, the date, the salutation and the opening argument. It is
 legible. A visitor learns more from the page than from anything a parser could
 write about it, which is why a member's letters are shown as a wall of
@@ -148,8 +161,9 @@ failed. Three passes took 58 failures down to a handful.
 - **Most dates are upper bounds.** Roughly a fifth of slugs state a date. The
   rest are placed at the first Wayback capture that saw them, and shown as
   "by March 2016" rather than as a day, everywhere they appear.
-- **Search covers filenames, not letters.** With no text layer in three
-  quarters of the PDFs, there is nothing else to search until they are OCR'd.
+- **Search covers filenames, not letters.** Not because it cannot be done —
+  65% of these PDFs carry a text layer — but because a full-text index over
+  48,000 documents is its own piece of work, and nothing shipped yet builds it.
 
 ## Deploying
 

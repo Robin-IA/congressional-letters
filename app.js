@@ -227,8 +227,11 @@ function sparkline(counts, from, to) {
 }
 
 
-// The letter itself. For most of these the scan IS the document — only 24% of
-// the PDFs carry a text layer — so the page is the primary thing to show.
+// The letter itself, shown as its first page. Measured on 50 at random, one
+// request at a time: 65% of these PDFs do carry a text layer, which is the
+// opposite of what an earlier 21-file sample claimed. The page is still the
+// primary thing to show — it is the signed original — but "they are mostly
+// scans" was not true and is not a reason for anything.
 function topicTags(row) {
   const raw = get(row, 'topics');
   if (!raw) return null;
@@ -961,6 +964,11 @@ function viewAbout() {
     el('p', {}, `It also means the descriptions are rough. Where a file was named something
       vague, you’ll see something vague. We’d rather show you that than make
       something up.`),
+    el('p', {}, `We used to say here that most of these letters were scans with no
+      readable text in them. That was wrong — it came from checking 21 files.
+      Checking 50 properly, about two thirds of them do have readable text
+      inside. Searching those words is something we haven’t built yet, but it
+      is possible, and this page will say so when it exists.`),
 
     el('h3', {}, 'About the dates'),
     el('p', {}, `Some letters have the date right in the filename, and those are exact.`),

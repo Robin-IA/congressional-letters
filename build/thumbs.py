@@ -46,6 +46,7 @@ from __future__ import annotations
 
 import argparse
 import concurrent.futures as cf
+import hashlib
 import io
 import json
 import re
@@ -53,6 +54,7 @@ import sys
 import threading
 import time
 import urllib.error
+import urllib.parse
 import urllib.request
 from collections import Counter, defaultdict
 from datetime import date
@@ -60,6 +62,7 @@ from pathlib import Path
 
 UA = {"User-Agent": "ia-congressional-member-letters/0.1 "
                     "(Internet Archive; collections research)"}
+CDX = "http://web.archive.org/cdx/search/cdx"
 TIMEOUT = 120
 MAX_BYTES = 40 * 1024 * 1024      # a letter is not 40 MB; something else is
 WIDTH = 340                        # rendered thumbnail width in pixels
@@ -89,6 +92,7 @@ QUALITY = 72
 
 _print_lock = threading.Lock()
 _dates_lock = threading.Lock()
+_text_lock = threading.Lock()
 
 
 def wayback_url(record: dict) -> str:
@@ -152,8 +156,57 @@ def render(blob: bytes, out_path: Path) -> None:
         document.close()
 
 
+def extract_text(blob: bytes, pages: int = 6) -> str:
+    """Whatever the PDF will give up without OCR.
+
+    Taken here because the bytes are already in hand. Measured on 50 letters
+    drawn at random, one request at a time: 48 served a valid PDF and 31 of
+    those — 65% — carry a usable text layer, median 2,852 characters over four
+    pages. An earlier sample of 21 put that at a quarter and was simply wrong,
+    which is the kind of number worth re-measuring before building on it.
+
+    Nothing reads this yet. It is written because a second pass over 48,000
+    multi-megabyte files, purely to get text we could have taken the first
+    time, is not a thing to do to the Wayback Machine.
+    """
+    try:
+        import pypdf
+        reader = pypdf.PdfReader(io.BytesIO(blob))
+        parts = []
+        for page in reader.pages[:pages]:
+            try:
+                parts.append(page.extract_text() or "")
+            except Exception:  # noqa: BLE001 — one bad page, not a bad file
+                continue
+        return re.sub(r"\s+", " ", "\n".join(parts)).strip()
+    except Exception:  # noqa: BLE001
+        return ""
+
+
+def other_captures(record: dict, limit: int = 4) -> list[str]:
+    """Timestamps of other 200-status captures of the same URL.
+
+    Because one capture being broken does not mean the letter is. A crawl can
+    truncate a large file — a byte cap on the fetch, a connection cut — and
+    store the fragment, so what comes back is a PDF header and nothing that
+    will render. Tested on the failures from a random sample: four of the four
+    that could be checked rendered fine from a different capture.
+    """
+    query = urllib.parse.urlencode([
+        ("url", record["url"]), ("output", "json"), ("fl", "timestamp"),
+        ("filter", "statuscode:200"), ("limit", str(limit + 4))])
+    try:
+        request = urllib.request.Request(f"{CDX}?{query}", headers=UA)
+        with urllib.request.urlopen(request, timeout=60) as response:
+            rows = json.loads(response.read().decode("utf-8", "replace") or "[]")
+    except Exception:  # noqa: BLE001
+        return []
+    stamps = [row[0] for row in rows[1:] if row and row[0] != record["timestamp"]]
+    return stamps[:limit]
+
+
 def one(record: dict, thumbs: Path, pause: float, retries: int,
-        dates_path: Path) -> str:
+        dates_path: Path, text_path: Path | None = None) -> str:
     digest = record.get("digest") or ""
     if not digest:
         return "no-digest"
@@ -162,17 +215,46 @@ def one(record: dict, thumbs: Path, pause: float, retries: int,
         return "cached"
 
     last = "unknown"
+    stamps = [record["timestamp"]]
+    tried = 0
     for attempt in range(retries):
         if pause:
             time.sleep(pause)
         try:
-            request = urllib.request.Request(wayback_url(record), headers=UA)
+            at = stamps[min(tried, len(stamps) - 1)]
+            url = (f"https://web.archive.org/web/{at}id_/{record['url']}")
+            request = urllib.request.Request(url, headers=UA)
             with urllib.request.urlopen(request, timeout=TIMEOUT) as response:
                 blob = response.read(MAX_BYTES + 1)
             if len(blob) > MAX_BYTES:
                 return "too-big"
+            # IS THIS CAPTURE THE DOCUMENT? Two ways it can fail to be, and
+            # the second is the common one.
+            #
+            # A missing %PDF header means the crawler stored a page instead of
+            # a file. A header with a broken body means the capture was
+            # truncated — a byte cap on the crawl, a connection cut — and five
+            # of the first six letters tried at this depth failed exactly that
+            # way, raising PdfiumError on a blob that began "%PDF" perfectly.
+            # Checking only the header missed every one of them.
+            staged = out_path.with_suffix(".part")
+            bad = None
             if not blob.startswith(b"%PDF"):
-                return "not-pdf"
+                bad = "not-pdf"
+            else:
+                try:
+                    render(blob, staged)
+                except Exception as exc:  # noqa: BLE001
+                    bad = f"unreadable-{type(exc).__name__}"
+            if bad:
+                # Ask for the other captures before giving up on the letter.
+                if tried == 0:
+                    stamps += other_captures(record)
+                tried += 1
+                if tried < len(stamps):
+                    last = bad
+                    continue
+                return bad
             # Read the date out of the same bytes. Appended as it is found, so
             # a run killed on the timer keeps what it learned.
             found = creation_date(blob)
@@ -182,10 +264,25 @@ def one(record: dict, thumbs: Path, pause: float, retries: int,
                     dates_path.parent.mkdir(parents=True, exist_ok=True)
                     with dates_path.open("a", encoding="utf-8") as handle:
                         handle.write(line + chr(10))
-            staged = out_path.with_suffix(".part")
-            render(blob, staged)
+            # The text and a second digest, out of the same bytes. sha256
+            # because the CDX digest is base32 SHA-1, which is fine for
+            # addressing a capture and is not what anything else dedups on.
+            if text_path is not None:
+                body = extract_text(blob)
+                record_line = json.dumps({
+                    "digest": digest,
+                    "sha256": hashlib.sha256(blob).hexdigest(),
+                    "bytes": len(blob),
+                    "captured": at,
+                    "chars": len(body),
+                    "text": body[:60000],
+                }, ensure_ascii=False)
+                with _text_lock:
+                    text_path.parent.mkdir(parents=True, exist_ok=True)
+                    with text_path.open("a", encoding="utf-8") as handle:
+                        handle.write(record_line + chr(10))
             staged.replace(out_path)
-            return "rendered"
+            return "rendered" if tried == 0 else "rescued-from-another-capture"
         except urllib.error.HTTPError as exc:
             last = f"http-{exc.code}"
             # 404 means this capture is not replayable; nothing will change
@@ -218,6 +315,12 @@ def main() -> None:
     parser.add_argument("--dates", type=Path,
                         default=root / "data" / "pdf-dates.jsonl",
                         help="digest -> date the PDF says it was made")
+    parser.add_argument("--text", type=Path,
+                        default=root / "data" / "letter-text.jsonl",
+                        help="the letter's own words, taken from the same "
+                             "download as the thumbnail; --no-text to skip")
+    parser.add_argument("--no-text", action="store_true",
+                        help="do not extract text while rendering")
     parser.add_argument("--max", type=int, default=0,
                         help="stop after this many renders (0 = no limit)")
     parser.add_argument("--per-member", type=int, default=0,
@@ -302,8 +405,10 @@ def main() -> None:
     started = time.time()
     done = 0
     with cf.ThreadPoolExecutor(max_workers=args.workers) as pool:
+        text_path = None if args.no_text else args.text
         futures = {pool.submit(one, j, args.thumbs, args.pause,
-                               args.retries, args.dates): j for j in pending}
+                               args.retries, args.dates, text_path): j
+                   for j in pending}
         for future in cf.as_completed(futures):
             try:
                 outcome = future.result()
