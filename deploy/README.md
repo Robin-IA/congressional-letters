@@ -70,9 +70,23 @@ a gap in a wall, a missing member file is the wrong letters.
 Pages allows **10 builds an hour** from a branch, and every push is a build, so
 batch edits rather than pushing each one.
 
-Then: repository public under `internetarchivecanada`, Pages from the `main`
-branch root, and the explorer is at
-`https://internetarchivecanada.github.io/letters-from-congress/`.
+## Where it is published
+
+Two repositories, both serving the `harvest-member-letters` branch from its
+root, both rebuilt by the same publish cycle:
+
+| | |
+| --- | --- |
+| `internetarchivecanada/congressional-letters` | <https://internetarchivecanada.github.io/congressional-letters/> |
+| `Robin-IA/congressional-letters` | <https://robin-ia.github.io/congressional-letters/> |
+
+Not `main` in either: `main` is the initial scaffold and the work has never
+been merged into it. Pages points at the branch instead.
+
+`internetarchivecanada/letters-from-congress` is the older repository and holds
+the pull request, but it is private and has no Pages site — Pages from a private
+repository needs a paid plan, which is why the public mirror was made as a
+separate repository rather than by opening that one up.
 
 ## The labs tile
 

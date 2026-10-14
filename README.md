@@ -1,13 +1,26 @@
 # Letters from Congress
 
+### → **[Read it here](https://internetarchivecanada.github.io/congressional-letters/)** · [mirror](https://robin-ia.github.io/congressional-letters/)
+
 Letters published on sitting members of Congress's own websites and preserved
 by the Wayback Machine, organised by member: who each one wrote to, and when.
 
+**69,650 letters · 514 of 539 members · 2000–2026**
+
+| | |
+| --- | --- |
+| Internet Archive Canada | <https://internetarchivecanada.github.io/congressional-letters/> |
+| Working copy | <https://robin-ia.github.io/congressional-letters/> |
+
+Both serve the same branch and are rebuilt by the same publish cycle, so they
+stay in step.
+
 One static page over a small index plus one file per member. No server, no
-database.
+database. To run it locally, serve the repository root — the page, `index.json`
+and `thumbs/` all sit there:
 
 ```bash
-python3 -m http.server 8947 --directory site
+python3 -m http.server 8947
 ```
 
 Every view is a link, because the URL is the whole state:
