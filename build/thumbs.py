@@ -62,7 +62,15 @@ from pathlib import Path
 
 UA = {"User-Agent": "ia-congressional-member-letters/0.1 "
                     "(Internet Archive; collections research)"}
-CDX = "http://web.archive.org/cdx/search/cdx"
+# HTTPS, deliberately. Over plain http this endpoint answers 503 "Internet
+# Archive: Temporarily Offline" in about five seconds, every time — which is
+# how the capture retry came to look like "these letters have no other
+# captures": seven of eight lookups returned nothing, all in an identical
+# 5.2s, because every one of them was a swallowed 503. The same query over
+# https returns the captures. harvest.py still names the http endpoint and
+# worked, so this is not a general outage; it is worth knowing about if that
+# cache ever has to be rebuilt.
+CDX = "https://web.archive.org/cdx/search/cdx"
 TIMEOUT = 120
 MAX_BYTES = 40 * 1024 * 1024      # a letter is not 40 MB; something else is
 WIDTH = 340                        # rendered thumbnail width in pixels
