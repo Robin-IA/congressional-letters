@@ -565,7 +565,24 @@ function viewRecipients() {
   const p = params();
   const q = (p.get('q') || '').toLowerCase();
   const all = INDEX.recipients || [];
-  const list = q ? all.filter(([name]) => name.toLowerCase().includes(q)) : all;
+  // Filtering only the 200 carried in index.json meant the box answered "no
+  // matches" for 3,970 recipients that exist. If the search index is already
+  // in memory it knows them all; if it is not, this kicks off the fetch and
+  // re-renders, so the first search of a rare name fills in a moment later.
+  let pool = all;
+  if (q && SEARCH && !SEARCH.failed && Array.isArray(SEARCH.recipients)) {
+    const tally = new Map();
+    for (const row of SEARCH.rows) {
+      if (row[1] < 0) continue;
+      const name = SEARCH.recipients[row[1]];
+      if (!name.toLowerCase().includes(q)) continue;
+      tally.set(name, (tally.get(name) || 0) + 1);
+    }
+    if (tally.size) pool = [...tally.entries()].sort((a, b) => b[1] - a[1]);
+  } else if (q && !SEARCH) {
+    loadSearch().then(() => render());
+  }
+  const list = q ? pool.filter(([name]) => name.toLowerCase().includes(q)) : all;
   const limit = shown || CARDS;
   const max = all.length ? all[0][1] : 1;
 
@@ -758,8 +775,33 @@ function viewTimeline() {
 
 async function viewYear(yearText) {
   const year = Number(yearText);
-  const candidates = MEMBERS.filter(m => m.span
-    && m.span[0] <= year && year <= m.span[1]);
+
+  // Same shape as viewRecipient: ask the search index which members actually
+  // wrote that year rather than loading everyone whose service span covers it.
+  // The span filter was not WRONG, it was indiscriminate — 416 member files
+  // fetched to draw the 2024 page, 316 for 2020. The index knows who, so only
+  // the busiest are fetched and the page draws without pulling 12 MB first.
+  //
+  // search.json omits the few hundred letters that have neither a subject nor
+  // a recipient, which is fine here: it is choosing WHICH members to load, and
+  // every letter of a loaded member is still counted from the member's own file.
+  const search = await loadSearch();
+  let counts = new Map();
+  if (search && !search.failed && Array.isArray(search.rows)) {
+    for (const row of search.rows) {
+      if (row[2] !== year) continue;
+      counts.set(row[0], (counts.get(row[0]) || 0) + 1);
+    }
+  }
+  const YEAR_MEMBERS = 40;
+  let ids = [...counts.entries()].sort((a, b) => b[1] - a[1]).map(([i]) => i);
+  const withheld = Math.max(0, ids.length - YEAR_MEMBERS);
+  ids = ids.slice(0, YEAR_MEMBERS).map(i => search.members[i]);
+
+  const candidates = ids.length
+    ? ids.map(id => byId.get(id)).filter(Boolean)
+    : MEMBERS.filter(m => m.span && m.span[0] <= year && year <= m.span[1]);
+
   const loaded = await Promise.all(candidates.map(async m =>
     [m, (await lettersOf(m.id)).filter(r =>
       (get(r, 'date') || '').startsWith(String(year)))]));
@@ -778,6 +820,11 @@ async function viewYear(yearText) {
         el('div', {}, el('span', { class: 'v tab' }, num(pairs.length)),
           el('span', { class: 'k' }, 'Members')),
       )),
+    withheld
+      ? el('p', { class: 'note' },
+        `${num(withheld)} more members also wrote in ${year}. The busiest `
+        + `${YEAR_MEMBERS} are shown here; the rest are on their own pages.`)
+      : null,
     el('div', { class: 'cols' },
       el('div', { class: 'panel' }, wall(rows)),
       el('div', { class: 'panel' },
@@ -843,12 +890,29 @@ async function viewSearch(query) {
   }
 
   const nameHits = MEMBERS.filter(m => m.name.toLowerCase().includes(needle));
-  const recipientHits = (INDEX.recipients || [])
-    .filter(([name]) => name.toLowerCase().includes(needle));
 
   const loaded = await loadSearch();
   const data = loaded && !loaded.failed ? loaded : null;
   const failed = loaded && loaded.failed;
+
+  // Shortcuts to a recipient's own page, counted over EVERY recipient rather
+  // than the 200 the totals list carries. 3,970 of the 4,170 are outside that
+  // list, so searching for one of them found its letters — search has always
+  // matched the full list — but never offered the page they sit on.
+  const recipientHits = [];
+  if (data) {
+    const tally = new Map();
+    for (const row of data.rows) {
+      if (row[1] < 0) continue;
+      const name = data.recipients[row[1]];
+      if (!name.toLowerCase().includes(needle)) continue;
+      tally.set(name, (tally.get(name) || 0) + 1);
+    }
+    recipientHits.push(...[...tally.entries()].sort((a, b) => b[1] - a[1]));
+  } else {
+    recipientHits.push(...(INDEX.recipients || [])
+      .filter(([name]) => name.toLowerCase().includes(needle)));
+  }
   const letterHits = [];
   if (data) {
     for (const [mIdx, rIdx, year, rowIdx, subject, exact, topics] of data.rows) {
