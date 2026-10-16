@@ -23,6 +23,23 @@ and `thumbs/` all sit there:
 python3 -m http.server 8947
 ```
 
+## Running the pipeline
+
+```bash
+python3 -m venv .venv && source .venv/bin/activate
+pip install -r requirements.txt
+```
+
+`pypdfium2` and `pillow` do the rendering, `pypdf` reads dates and text.
+`internetarchive` is only needed by `build/upload_item.py`, which is not in the
+serving path at the moment — both the per-member data and the thumbnails come
+from this repository.
+
+The two long jobs, `build/thumbs.py` and `build/resolve_wrappers.py`, take days
+and are resumable: a rendered thumbnail is never fetched twice, and a followed
+wrapper is never followed twice. Neither has to finish for the explorer to be
+correct. Run them on something that will not go to sleep.
+
 Every view is a link, because the URL is the whole state:
 `?member=W000817`, `?to=Department%20of%20Justice`, `?year=2020`,
 `?view=recipients`, `?view=search&q=opioid`.
