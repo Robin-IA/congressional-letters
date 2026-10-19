@@ -106,6 +106,7 @@ QUALITY = 72
 _print_lock = threading.Lock()
 _dates_lock = threading.Lock()
 _text_lock = threading.Lock()
+_fail_lock = threading.Lock()
 
 
 def wayback_url(record: dict) -> str:
@@ -216,6 +217,64 @@ def other_captures(record: dict, limit: int = 4) -> list[str]:
         return []
     stamps = [row[0] for row in rows[1:] if row and row[0] != record["timestamp"]]
     return stamps[:limit]
+
+
+GIVE_UP_AFTER = 3
+
+# Outcomes that will not change however many times they are tried. Each of
+# these is reached only AFTER the alternate captures have been tried, so it
+# means the letter is not in the archive in a form that renders — not that we
+# were unlucky. One strike is enough.
+#
+# Everything else — a connection reset, a timeout, a 429 or a 5xx — is a fact
+# about the afternoon rather than about the archive, and gets three.
+TERMINAL = {
+    "not-pdf", "too-big", "no-digest", "truncated-by-the-crawl",
+    "redirect-unreadable", "http-404", "http-403", "http-410",
+}
+
+
+def read_failures(path: Path) -> dict[str, int]:
+    """digest -> how many runs have already failed on it.
+
+    The module docstring has claimed since the first version that "a failure
+    is recorded and skipped rather than retried forever". It was not true:
+    nothing was written down, so every run re-attempted every letter that had
+    ever failed, and those are the expensive ones — three retries with 8, 16
+    and 32 second backoffs, a CDX lookup, and up to four alternate captures.
+    Minutes each.
+
+    It showed when the 403 lifted. The ~850 letters that failed while we were
+    blocked sat at the front of the queue, so the renderer spent four minutes
+    producing four thumbnails: it was not throttled any more, it was grinding
+    through known-bad work it had no memory of.
+    """
+    counts: dict[str, int] = {}
+    if not path.exists():
+        return counts
+    with path.open(encoding="utf-8") as handle:
+        for line in handle:
+            try:
+                row = json.loads(line)
+            except Exception:  # noqa: BLE001 — a half-written last line
+                continue
+            digest = row.get("digest")
+            if not digest:
+                continue
+            why = row.get("why", "")
+            # A terminal outcome counts as the whole budget at once.
+            bump = GIVE_UP_AFTER if (
+                why in TERMINAL or why.startswith("unreadable-")) else 1
+            counts[digest] = counts.get(digest, 0) + bump
+    return counts
+
+
+def record_failure(path: Path, digest: str, why: str) -> None:
+    line = json.dumps({"digest": digest, "why": why})
+    with _fail_lock:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with path.open("a", encoding="utf-8") as handle:
+            handle.write(line + chr(10))
 
 
 def one(record: dict, thumbs: Path, pause: float, retries: int,
@@ -346,6 +405,12 @@ def main() -> None:
                              "download as the thumbnail; --no-text to skip")
     parser.add_argument("--no-text", action="store_true",
                         help="do not extract text while rendering")
+    parser.add_argument("--failures", type=Path,
+                        default=root / "data" / "thumb-failures.jsonl",
+                        help="letters that would not render; after "
+                             f"{GIVE_UP_AFTER} tries they are skipped")
+    parser.add_argument("--retry-failed", action="store_true",
+                        help="attempt the ones already given up on")
     parser.add_argument("--max", type=int, default=0,
                         help="stop after this many renders (0 = no limit)")
     parser.add_argument("--per-member", type=int, default=0,
@@ -373,10 +438,17 @@ def main() -> None:
             seen_digests.add(digest)
             jobs.append(record)
 
+    failures = read_failures(args.failures)
+    hopeless = {d for d, n in failures.items() if n >= GIVE_UP_AFTER}
     pending = [j for j in jobs
-               if not (args.thumbs / f"{j['digest']}{SUFFIX}").exists()]
+               if not (args.thumbs / f"{j['digest']}{SUFFIX}").exists()
+               and (args.retry_failed or j["digest"] not in hopeless)]
     print(f"{len(jobs):,} distinct PDFs, {len(pending):,} still to render",
           file=sys.stderr)
+    if hopeless and not args.retry_failed:
+        print(f"  skipping {len(hopeless):,} that have failed "
+              f"{GIVE_UP_AFTER}+ times (--retry-failed to try them anyway)",
+              file=sys.stderr)
 
     # RENDER WHAT IS ON SCREEN FIRST, FOR EVERY MEMBER AT ONCE.
     #
@@ -440,6 +512,12 @@ def main() -> None:
             except Exception as exc:  # noqa: BLE001
                 outcome = type(exc).__name__
             outcomes[outcome] += 1
+            # Write the failure down. Without this every run re-attempts every
+            # letter that has ever failed, and those are the slow ones.
+            if outcome not in ("rendered", "cached",
+                               "rescued-from-another-capture"):
+                record_failure(args.failures, futures[future]["digest"],
+                               outcome)
             done += 1
             if done % 100 == 0:
                 rate = done / max(0.001, (time.time() - started) / 60)
