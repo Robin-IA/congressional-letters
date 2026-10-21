@@ -228,6 +228,18 @@ GIVE_UP_AFTER = 3
 #
 # Everything else — a connection reset, a timeout, a 429 or a 5xx — is a fact
 # about the afternoon rather than about the archive, and gets three.
+# A refused connection says nothing about the letter. Raising concurrency from
+# two workers to three took network failures from 29% of all failures to 68%,
+# and because every failure counted toward the three-strike budget, that would
+# have permanently retired good letters for being unlucky three times during a
+# throttle. They do not count at all now: a letter is only given up on for
+# something about the letter.
+TRANSIENT = {
+    "URLError", "ConnectionResetError", "timeout", "TimeoutError",
+    "IncompleteRead", "RemoteDisconnected", "http-429", "http-500",
+    "http-502", "http-503", "http-504",
+}
+
 TERMINAL = {
     "not-pdf", "too-big", "no-digest", "truncated-by-the-crawl",
     "redirect-unreadable", "http-404", "http-403", "http-410",
@@ -263,8 +275,12 @@ def read_failures(path: Path) -> dict[str, int]:
                 continue
             why = row.get("why", "")
             # A terminal outcome counts as the whole budget at once.
-            bump = GIVE_UP_AFTER if (
-                why in TERMINAL or why.startswith("unreadable-")) else 1
+            if why in TERMINAL or why.startswith("unreadable-"):
+                bump = GIVE_UP_AFTER          # settled; one strike is enough
+            elif why in TRANSIENT:
+                bump = 0                      # see below
+            else:
+                bump = 1
             counts[digest] = counts.get(digest, 0) + bump
     return counts
 
