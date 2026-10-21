@@ -107,6 +107,7 @@ _print_lock = threading.Lock()
 _dates_lock = threading.Lock()
 _text_lock = threading.Lock()
 _fail_lock = threading.Lock()
+_pdfium_lock = threading.Lock()
 
 
 def wayback_url(record: dict) -> str:
@@ -156,18 +157,25 @@ def creation_date(blob: bytes) -> str | None:
 
 def render(blob: bytes, out_path: Path) -> None:
     import pypdfium2 as pdfium
-    document = pdfium.PdfDocument(io.BytesIO(blob))
-    try:
-        if not len(document):
-            raise ValueError("no pages")
-        page = document[0]
-        # Scale from the page's own width so a legal-size letter and a letter-
-        # size one come out the same number of pixels across.
-        scale = WIDTH / max(1.0, page.get_width())
-        image = page.render(scale=min(scale, 3.0)).to_pil()
-        image.convert("RGB").save(out_path, "WEBP", quality=QUALITY, method=4)
-    finally:
-        document.close()
+    # PDFium is not thread-safe, and two workers calling it at once crashed the
+    # whole process with a segmentation fault on 2026-10-21, 918 renders in.
+    # Rendering is a fraction of a second against seconds of fetching, so
+    # holding a lock across it costs next to nothing.
+    with _pdfium_lock:
+        document = pdfium.PdfDocument(io.BytesIO(blob))
+        try:
+            if not len(document):
+                raise ValueError("no pages")
+            page = document[0]
+            # Scale from the page's own width so a legal-size letter and a letter-
+            # size one come out the same number of pixels across.
+            scale = WIDTH / max(1.0, page.get_width())
+            # convert() copies, so the image no longer points into PDFium's
+            # memory once the document is closed and the lock released.
+            image = page.render(scale=min(scale, 3.0)).to_pil().convert("RGB")
+        finally:
+            document.close()
+    image.save(out_path, "WEBP", quality=QUALITY, method=4)
 
 
 def extract_text(blob: bytes, pages: int = 6) -> str:
