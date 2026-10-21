@@ -11,3 +11,9 @@ data/wrapper-resolved.jsonl
 data/pdf-dates.jsonl
 data/letter-text.jsonl
 data/thumb-failures.jsonl
+
+# The renderer writes <digest>.part and renames it into place. A `git add -A`
+# that lands in that window tries to index a file that no longer exists and
+# aborts the whole add -- which silently left a day of thumbnails unpublished,
+# because the publish loop does exactly that every cycle.
+*.part
