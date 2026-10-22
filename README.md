@@ -2,6 +2,8 @@
 
 ### → **[Read it here](https://internetarchivecanada.github.io/congressional-letters/)** · [mirror](https://robin-ia.github.io/congressional-letters/)
 
+*Picking this up on another machine? → [PICKUP.md](PICKUP.md)*
+
 Letters published on sitting members of Congress's own websites and preserved
 by the Wayback Machine, organised by member: who each one wrote to, and when.
 
